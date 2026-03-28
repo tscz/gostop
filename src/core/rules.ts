@@ -4,9 +4,30 @@ import { calcScore, applyGoMultiplier } from './scoring'
 import { buildExplanation } from './moveExplainer'
 import { deal } from './deck'
 import type { Card } from './cards'
-import type { GameState, MoveExplanation } from './gameState'
+import type { GameState, MoveExplanation, PendingPoktan } from './gameState'
 
 const GOSTOP_THRESHOLD = 7
+
+// ═══════════════════════════════════════════════════════════════
+// DETECT POKTAN
+// Returns the first month where the given hand has 3 cards and
+// the field has at least 1 card of that month. Since each month
+// has 4 cards, 3 in hand guarantees at most 1 can be on the field.
+// ═══════════════════════════════════════════════════════════════
+export function detectPoktan(hand: Card[], field: Card[]): PendingPoktan | null {
+  const byMonth = new Map<number, Card[]>()
+  for (const c of hand) {
+    if (!byMonth.has(c.month)) byMonth.set(c.month, [])
+    byMonth.get(c.month)!.push(c)
+  }
+  for (const [month, cards] of byMonth) {
+    if (cards.length >= 3) {
+      const fieldCard = field.find(f => f.month === month)
+      if (fieldCard) return { handCards: cards.slice(0, 3), fieldCard }
+    }
+  }
+  return null
+}
 
 // ═══════════════════════════════════════════════════════════════
 // INIT STATE
@@ -39,6 +60,7 @@ export function initState(): GameState {
       history: [],
       goCount: 0,
       pendingChoose: null,
+      pendingPoktan: null,
       _hadTwoMatches: false,
       scoreAtLastGo: 0,
       message: instantWin === 'player' ? '💣 4장 폭탄! 즉시 승리!' : '💣 AI 4장 폭탄!',
@@ -63,10 +85,111 @@ export function initState(): GameState {
     history: [],
     goCount: 0,
     pendingChoose: null,
+    pendingPoktan: detectPoktan(playerHand, field),
     message: '',
     winner: null,
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APPLY POKTAN
+// Executes a Poktan declaration: capture 3 hand cards + 1 field
+// card, steal 1 junk from opponent. Turn passes to opponent.
+// ═══════════════════════════════════════════════════════════════
+export function applyPoktan(
+  state: GameState,
+  isAI: boolean,
+  t: (key: string) => string,
+): GameState {
+  const { handCards, fieldCard } = state.pendingPoktan!
+
+  let captured = [...(isAI ? state.aiCaptured : state.playerCaptured)]
+  let oppCaptured = [...(isAI ? state.playerCaptured : state.aiCaptured)]
+
+  // Capture all 4 cards
+  captured = [...captured, ...handCards, fieldCard]
+
+  // Remove hand cards from hand
+  const handCardIds = new Set(handCards.map(c => c.id))
+  const newPH = isAI
+    ? state.playerHand
+    : state.playerHand.filter(c => !handCardIds.has(c.id))
+  const newAH = isAI
+    ? state.aiHand.filter(c => !handCardIds.has(c.id))
+    : state.aiHand
+
+  // Remove field card from field
+  const newField = state.field.filter(f => f.id !== fieldCard.id)
+
+  // Steal 1 junk from opponent
+  const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+  if (junk) {
+    oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
+    captured = [...captured, junk]
+  }
+
+  // Score
+  const prevPts = isAI ? state.aiScore : state.playerScore
+  const prevBD = isAI ? state.aiBreakdown : state.playerBreakdown
+  const { points: newPts, breakdown } = calcScore(captured)
+  const delta = newPts - prevPts
+
+  const expLines: string[] = [
+    `💣 폭탄 Poktan! ${t('poktanDesc')}`,
+    ...(delta > 0 ? [`🎉 +${delta} ${t('pts')}! (${t('total')}: ${newPts})`] : []),
+    ...breakdown
+      .filter(b => !prevBD.some(p => p.key === b.key))
+      .map(b => `🏆 ${b.emoji} ${b.label} +${b.pts}${t('pts')}`),
+    `💡 ${t('tipExcellent')}`,
+  ]
+
+  const exp: MoveExplanation = {
+    lines: expLines,
+    quality: 'excellent',
+    delta,
+    newPts,
+    who: isAI ? 'ai' : 'player',
+  }
+
+  // Game over check (e.g. player used last 3 cards for Poktan)
+  const gameOver = newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0
+  const finalPlayerPts = gameOver && !isAI
+    ? applyGoMultiplier(newPts, state.goCount)
+    : isAI ? state.playerScore : newPts
+  const finalAiPts = isAI ? newPts : state.aiScore
+  let phase: GameState['phase'] = GamePhase.SELECT
+  let winner: GameState['winner'] = null
+  if (gameOver) {
+    phase = GamePhase.GAME_OVER
+    winner = finalPlayerPts > finalAiPts ? 'player' : finalAiPts > finalPlayerPts ? 'ai' : 'draw'
+  }
+
+  // Detect Poktan for the next player (only if game isn't over)
+  const nextHand = isAI ? newPH : newAH
+  const pendingPoktan = !gameOver ? detectPoktan(nextHand, newField) : null
+
+  return {
+    ...state,
+    _hadTwoMatches: false,
+    playerHand: newPH,
+    aiHand: newAH,
+    field: newField,
+    playerCaptured: isAI ? oppCaptured : captured,
+    aiCaptured: isAI ? captured : oppCaptured,
+    playerScore: finalPlayerPts,
+    aiScore: finalAiPts,
+    playerBreakdown: isAI ? state.playerBreakdown : breakdown,
+    aiBreakdown: isAI ? breakdown : state.aiBreakdown,
+    turn: isAI ? 'player' : 'ai',
+    phase,
+    lastExp: exp,
+    history: [...state.history, exp],
+    pendingChoose: null,
+    pendingPoktan,
+    winner,
+    message: '',
   }
 }
 
@@ -101,10 +224,10 @@ export function applyTurn(
     newField = newField.filter(f => f.id !== chosen.id)
     captured = [...captured, played, chosen]
   } else if (handMatches.length === 3) {
-    // Poktan: 3 cards of same month in hand + 1 on field → all 4 collected + pi
+    // Sa-ssak (싹쓸이): played card sweeps all 3 remaining field cards of same month
     newField = newField.filter(f => !handMatches.some(m => m.id === f.id))
     captured = [...captured, played, ...handMatches]
-    special = 'poktan'
+    special = 'sassak'
     const junk = oppCaptured.find(c => c.type === CardType.JUNK)
     if (junk) {
       oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
@@ -208,6 +331,10 @@ export function applyTurn(
       finalPlayerPts > finalAiPts ? 'player' : finalAiPts > finalPlayerPts ? 'ai' : 'draw'
   }
 
+  // Detect Poktan for the next player (only if game isn't over)
+  const nextHand = isAI ? newPH : newAH
+  const pendingPoktan = !gameOver ? detectPoktan(nextHand, newField) : null
+
   return {
     ...state, // scoreAtLastGo carried through via spread
     _hadTwoMatches: false, // reset after use
@@ -225,6 +352,8 @@ export function applyTurn(
     phase,
     lastExp: exp,
     history: [...state.history, exp],
+    pendingChoose: null,
+    pendingPoktan,
     winner,
   }
 }

@@ -12,7 +12,7 @@ import HelpModal from './HelpModal'
 
 export default function GameBoard() {
   const { t } = useTranslation()
-  const { state: g, playCard, chooseMatch, callGo, callStop, newGame, playAiTurn } = useGameStore()
+  const { state: g, playCard, chooseMatch, declarePoktan, callGo, callStop, newGame, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -31,6 +31,7 @@ export default function GameBoard() {
   const isChoose = g.phase === GamePhase.CHOOSE_MATCH
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
   const isOver = g.phase === GamePhase.GAME_OVER
+  const canPoktan = isPlayer && g.pendingPoktan !== null
 
   return (
     <div
@@ -89,6 +90,34 @@ export default function GameBoard() {
               )}
             </div>
           </div>
+
+          {/* Poktan declaration */}
+          {canPoktan && g.pendingPoktan && (
+            <div className="rounded-2xl border-2 border-orange-500/40 bg-orange-950/30 p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-orange-300 font-black text-sm mb-0.5">💣 폭탄 Poktan!</p>
+                  <p className="text-orange-200/60 text-xs">{t('poktanDesc')}</p>
+                </div>
+                <div className="flex gap-1.5 items-center">
+                  {[...g.pendingPoktan.handCards, g.pendingPoktan.fieldCard].map((c, i) => (
+                    <div key={c.id} className="relative">
+                      <CardSVG card={c} size={46} />
+                      {i === g.pendingPoktan!.handCards.length && (
+                        <span className="absolute -top-1 -right-1 text-[9px] bg-orange-500 text-white rounded-full px-1 font-bold leading-4">field</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={declarePoktan}
+                  className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all"
+                >
+                  💣 Poktan!
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Choose match */}
           {isChoose && g.pendingChoose && (

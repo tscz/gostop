@@ -25,6 +25,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     history: [],
     goCount: 0,
     pendingChoose: null,
+    pendingPoktan: null,
     message: '',
     winner: null,
     _hadTwoMatches: false,

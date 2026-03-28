@@ -81,9 +81,14 @@ const SPECIAL_RULES = {
       effect: 'Capture all 4 cards + steal 1 junk',
     },
     {
-      name: '폭탄 Poktan', color: 'text-red-400',
-      trigger: '3 hand cards match 1 field card (same month)',
+      name: '싹쓸이 Sa-ssak', color: 'text-purple-400',
+      trigger: 'Played hand card matches all 3 remaining field cards of the same month',
       effect: 'Capture all 4 cards + steal 1 junk',
+    },
+    {
+      name: '폭탄 Poktan', color: 'text-red-400',
+      trigger: 'You hold 3 hand cards of the same month and 1 is on the field — declare at the start of your turn',
+      effect: 'Capture all 4 cards + steal 1 junk (no draw step)',
     },
   ],
   de: [
@@ -103,9 +108,14 @@ const SPECIAL_RULES = {
       effect: 'Alle 4 Karten nehmen + 1 Junk stehlen',
     },
     {
-      name: '폭탄 Poktan', color: 'text-red-400',
-      trigger: '3 Handkarten matchen 1 Tischkarte (gleicher Monat)',
+      name: '싹쓸이 Sa-ssak', color: 'text-purple-400',
+      trigger: 'Gespielte Handkarte trifft alle 3 verbleibenden Tischkarten gleichen Monats',
       effect: 'Alle 4 Karten nehmen + 1 Junk stehlen',
+    },
+    {
+      name: '폭탄 Poktan', color: 'text-red-400',
+      trigger: '3 Handkarten gleichen Monats + 1 Tischkarte — am Zuganfang deklarieren',
+      effect: 'Alle 4 Karten nehmen + 1 Junk stehlen (kein Ziehen)',
     },
   ],
   ko: [
@@ -125,9 +135,14 @@ const SPECIAL_RULES = {
       effect: '4장 모두 획득 + 피 1장 빼앗기',
     },
     {
-      name: '폭탄', color: 'text-red-400',
-      trigger: '손패 3장이 바닥 카드 1장과 같은 달',
+      name: '싹쓸이', color: 'text-purple-400',
+      trigger: '낸 패가 같은 달 바닥 카드 3장 모두와 매칭',
       effect: '4장 모두 획득 + 피 1장 빼앗기',
+    },
+    {
+      name: '폭탄', color: 'text-red-400',
+      trigger: '손패 3장이 바닥 카드 1장과 같은 달 — 턴 시작 시 선언',
+      effect: '4장 모두 획득 + 피 1장 빼앗기 (뽑기 없음)',
     },
   ],
 }
@@ -178,7 +193,7 @@ function HowToTab({ lang }: { lang: Lang }) {
           {[
             ['1 Tischkarte gleichen Monats', '→ beide nehmen'],
             ['2 Tischkarten gleichen Monats', '→ eine auswählen, die andere bleibt'],
-            ['3 Tischkarten gleichen Monats', '→ alle 4 nehmen + 1 Junk stehlen (Poktan)'],
+            ['3 Tischkarten gleichen Monats', '→ alle 4 nehmen + 1 Junk stehlen (Sa-ssak)'],
             ['Kein Match', '→ Karte bleibt auf dem Tisch'],
           ].map(([a, b]) => (
             <li key={a} className="flex gap-2 text-slate-300">
@@ -240,7 +255,7 @@ function HowToTab({ lang }: { lang: Lang }) {
           {[
             ['같은 달 바닥 카드 1장', '→ 두 장 모두 획득'],
             ['같은 달 바닥 카드 2장', '→ 한 장 선택, 나머지는 바닥에'],
-            ['같은 달 바닥 카드 3장', '→ 4장 모두 획득 + 피 1장 빼앗기 (폭탄)'],
+            ['같은 달 바닥 카드 3장', '→ 4장 모두 획득 + 피 1장 빼앗기 (싹쓸이)'],
             ['매칭 없음', '→ 카드가 바닥에 남음'],
           ].map(([a, b]) => (
             <li key={a} className="flex gap-2 text-slate-300">
@@ -303,7 +318,7 @@ function HowToTab({ lang }: { lang: Lang }) {
           {[
             ['1 field card of the same month', '→ capture both'],
             ['2 field cards of the same month', '→ choose one; the other stays'],
-            ['3 field cards of the same month', '→ capture all 4 + steal 1 junk (Poktan)'],
+            ['3 field cards of the same month', '→ capture all 4 + steal 1 junk (Sa-ssak)'],
             ['No match', '→ your card stays on the field'],
           ].map(([a, b]) => (
             <li key={a} className="flex gap-2 text-slate-300">

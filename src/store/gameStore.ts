@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 import { GamePhase } from '../core/gameState'
-import { initState, applyTurn } from '../core/rules'
+import { initState, applyTurn, applyPoktan } from '../core/rules'
 import { applyGoMultiplier } from '../core/scoring'
 import { selectAiCard } from '../core/ai'
 import type { GameState } from '../core/gameState'
@@ -16,6 +16,7 @@ interface GameStore {
   // Actions
   playCard: (card: Card) => void
   chooseMatch: (matchCard: Card) => void
+  declarePoktan: () => void
   callGo: () => void
   callStop: () => void
   newGame: () => void
@@ -51,6 +52,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
       return { state: applyTurn(prev, card, false, getT()) }
+    })
+  },
+
+  declarePoktan: () => {
+    set(store => {
+      const prev = store.state
+      if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT || !prev.pendingPoktan) return store
+      return { state: applyPoktan(prev, false, getT()) }
     })
   },
 
@@ -146,6 +155,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set(store => {
       const prev = store.state
       if (prev.turn !== 'ai' || prev.phase !== GamePhase.SELECT) return store
+
+      // AI always declares Poktan when available
+      if (prev.pendingPoktan) {
+        const newState = applyPoktan(prev, true, getT())
+        if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {
+          const lead = newState.aiScore - newState.playerScore
+          if (lead > 0) {
+            return {
+              state: {
+                ...newState,
+                phase: GamePhase.GAME_OVER,
+                winner: 'ai' as const,
+                message: 'AI: STOP!',
+              },
+            }
+          }
+        }
+        return { state: newState }
+      }
 
       const card = selectAiCard(prev)
       const newState = applyTurn(prev, card, true, getT())

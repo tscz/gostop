@@ -43,6 +43,14 @@ export interface PendingChoose {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PENDING POKTAN
+// ═══════════════════════════════════════════════════════════════
+export interface PendingPoktan {
+  handCards: Card[]   // the 3 hand cards of same month
+  fieldCard: Card     // the 1 matching field card
+}
+
+// ═══════════════════════════════════════════════════════════════
 // GAME STATE
 // ═══════════════════════════════════════════════════════════════
 export interface GameState {
@@ -62,6 +70,7 @@ export interface GameState {
   history: MoveExplanation[]
   goCount: number
   pendingChoose: PendingChoose | null
+  pendingPoktan: PendingPoktan | null
   message: string
   winner: 'player' | 'ai' | 'draw' | null
   _hadTwoMatches: boolean

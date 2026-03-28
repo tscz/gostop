@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyTurn } from './rules'
+import { applyTurn, detectPoktan, applyPoktan } from './rules'
 import { GamePhase } from './gameState'
 import { DECK } from './cards'
 import type { GameState } from './gameState'
@@ -27,6 +27,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     history: [],
     goCount: 0,
     pendingChoose: null,
+    pendingPoktan: null,
     message: '',
     winner: null,
     _hadTwoMatches: false,
@@ -55,7 +56,7 @@ describe('applyTurn — hand card matching', () => {
     expect(next.field).not.toContainEqual(jan2)
   })
 
-  it('poktan: 3 field matches → all 4 captured + steal opponent junk', () => {
+  it('sassak: 3 field matches → all 4 captured + steal opponent junk', () => {
     // Jan has 4 cards: 1,2,3,4. Put 3 on field, play the 4th.
     const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
     const oppJunk = c(7) // Feb junk owned by opponent
@@ -248,5 +249,202 @@ describe('applyTurn — AI specific', () => {
     const next = applyTurn(state, jan1, true, t)
     expect(next.aiCaptured).toContainEqual(jan1)
     expect(next.playerCaptured).toHaveLength(0)
+  })
+})
+
+// ─── Sa-ssak ──────────────────────────────────────────────────────────────────
+
+describe('applyTurn — sa-ssak', () => {
+  // Jan cards: 1=Bright, 2=Ribbon, 3=Junk, 4=Junk
+  it('records sassak as special in explanation', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({ playerHand: [jan4], field: [jan1, jan2, jan3], drawPile: [] })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.lastExp?.lines.some(l => l.includes('sassak') || l.includes('Sa-ssak'))).toBe(true)
+  })
+
+  it('no pi steal when opponent has no junk', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan4],
+      field: [jan1, jan2, jan3],
+      drawPile: [],
+      aiCaptured: [], // opponent has no junk
+    })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.playerCaptured).toHaveLength(4)
+    expect(next.aiCaptured).toHaveLength(0)
+  })
+
+  it('sets pendingPoktan for next player if AI now has 3-of-a-kind + 1 field card', () => {
+    // Jan sassak by player. AI holds 3 Feb cards; 1 Feb card lands on field via draw.
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const feb5 = c(5), feb6 = c(6), feb7 = c(7), feb8 = c(8) // 4 Feb cards
+    const state = makeState({
+      playerHand: [jan4],
+      aiHand: [feb5, feb6, feb7],
+      field: [jan1, jan2, jan3],
+      drawPile: [feb8], // drawn feb goes to field → AI has 3 Feb in hand + 1 on field
+    })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.pendingPoktan).not.toBeNull()
+    expect(next.pendingPoktan?.handCards.every(c => c.month === 2)).toBe(true)
+  })
+})
+
+// ─── detectPoktan ─────────────────────────────────────────────────────────────
+
+describe('detectPoktan', () => {
+  it('returns null when hand has no 3-of-a-kind', () => {
+    const hand = [c(1), c(5), c(9)]  // Jan, Feb, Mar — all different months
+    const field = [c(2)]
+    expect(detectPoktan(hand, field)).toBeNull()
+  })
+
+  it('returns null when 3-of-a-kind in hand but no matching field card', () => {
+    const hand = [c(1), c(2), c(3)]  // 3 Jan cards
+    const field = [c(9)]             // only Mar on field — no Jan
+    expect(detectPoktan(hand, field)).toBeNull()
+  })
+
+  it('returns PendingPoktan when 3 hand cards match 1 field card', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3)
+    const jan4 = c(4) // on field
+    const result = detectPoktan([jan1, jan2, jan3], [jan4])
+    expect(result).not.toBeNull()
+    expect(result!.handCards).toHaveLength(3)
+    expect(result!.handCards.every(card => card.month === 1)).toBe(true)
+    expect(result!.fieldCard.id).toBe(jan4.id)
+  })
+
+  it('returns null when field is empty', () => {
+    expect(detectPoktan([c(1), c(2), c(3)], [])).toBeNull()
+  })
+
+  it('returns null when hand has only 2 cards of a month', () => {
+    const hand = [c(1), c(2), c(9)] // 2 Jan + 1 Mar
+    const field = [c(3)]            // Jan on field, but only 2 in hand
+    expect(detectPoktan(hand, field)).toBeNull()
+  })
+})
+
+// ─── applyPoktan ──────────────────────────────────────────────────────────────
+
+describe('applyPoktan', () => {
+  function makePoktanState(overrides: Partial<GameState> = {}): GameState {
+    // Player has 3 Jan cards in hand; 1 Jan card on field
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    return makeState({
+      playerHand: [jan1, jan2, jan3, c(9)], // 3 Jan + 1 other
+      aiHand: [c(21)],
+      field: [jan4],
+      drawPile: [],
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+      ...overrides,
+    })
+  }
+
+  it('captures all 3 hand cards + 1 field card', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    expect(next.playerCaptured).toContainEqual(c(1))
+    expect(next.playerCaptured).toContainEqual(c(2))
+    expect(next.playerCaptured).toContainEqual(c(3))
+    expect(next.playerCaptured).toContainEqual(c(4))
+  })
+
+  it('removes the 3 hand cards from playerHand', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    expect(next.playerHand).not.toContainEqual(c(1))
+    expect(next.playerHand).not.toContainEqual(c(2))
+    expect(next.playerHand).not.toContainEqual(c(3))
+    expect(next.playerHand).toContainEqual(c(9)) // other card stays
+  })
+
+  it('removes the field card from field', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    expect(next.field).not.toContainEqual(c(4))
+  })
+
+  it('steals 1 junk from opponent when available', () => {
+    const oppJunk = c(7) // Feb junk
+    const state = makePoktanState({ aiCaptured: [oppJunk] })
+    const next = applyPoktan(state, false, t)
+    expect(next.playerCaptured).toContainEqual(oppJunk)
+    expect(next.aiCaptured).not.toContainEqual(oppJunk)
+  })
+
+  it('does not steal when opponent has no junk', () => {
+    const state = makePoktanState({ aiCaptured: [c(9)] }) // opponent has only a Bright
+    const next = applyPoktan(state, false, t)
+    expect(next.playerCaptured).toHaveLength(4) // only the 4 poktan cards
+  })
+
+  it('passes turn to AI after player poktan', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    expect(next.turn).toBe('ai')
+    expect(next.phase).toBe(GamePhase.SELECT)
+  })
+
+  it('passes turn to player after AI poktan', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      aiHand: [jan1, jan2, jan3],
+      playerHand: [c(9)],
+      field: [jan4],
+      drawPile: [],
+      turn: 'ai',
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+    })
+    const next = applyPoktan(state, true, t)
+    expect(next.turn).toBe('player')
+    expect(next.aiCaptured).toContainEqual(jan1)
+    expect(next.playerCaptured).toHaveLength(0)
+  })
+
+  it('appends explanation to history', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    expect(next.history).toHaveLength(1)
+    expect(next.lastExp?.quality).toBe('excellent')
+    expect(next.lastExp?.who).toBe('player')
+  })
+
+  it('clears pendingPoktan after execution', () => {
+    const state = makePoktanState()
+    const next = applyPoktan(state, false, t)
+    // No new poktan available (AI has only 1 card of its month)
+    expect(next.pendingPoktan).toBeNull()
+  })
+
+  it('game over when player uses last cards for poktan and AI + pile are empty', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan1, jan2, jan3], // exactly 3 cards — all used in poktan
+      aiHand: [],
+      field: [jan4],
+      drawPile: [],
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+    })
+    const next = applyPoktan(state, false, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).not.toBeNull()
+  })
+
+  it('no game over when draw pile still has cards', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan1, jan2, jan3],
+      aiHand: [],
+      field: [jan4],
+      drawPile: [c(9)], // pile not empty
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+    })
+    const next = applyPoktan(state, false, t)
+    expect(next.phase).toBe(GamePhase.SELECT)
+    expect(next.winner).toBeNull()
   })
 })

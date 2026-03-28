@@ -55,9 +55,9 @@ export function buildExplanation({
     }
   }
 
-  if (special === 'chok')   { lines.push(`⚡ 촉 Chok! ${t('chokDesc')}`);     quality = 'good' }
-  if (special === 'ttadak') { lines.push(`💥 따닥 Ttadak! ${t('ttadakDesc')}`); quality = 'excellent' }
-  if (special === 'poktan') { lines.push(`💣 폭탄 Poktan! ${t('poktanDesc')}`); quality = 'excellent' }
+  if (special === 'chok')   { lines.push(`⚡ 촉 Chok! ${t('chokDesc')}`);         quality = 'good' }
+  if (special === 'ttadak') { lines.push(`💥 따닥 Ttadak! ${t('ttadakDesc')}`);   quality = 'excellent' }
+  if (special === 'sassak') { lines.push(`🌪️ 싹쓸이 Sa-ssak! ${t('sassakDesc')}`); quality = 'excellent' }
 
   const delta = newPts - prevPts
   if (delta > 0) lines.push(`🎉 +${delta} ${t('pts')}! (${t('total')}: ${newPts})`)
