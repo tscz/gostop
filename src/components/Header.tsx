@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
 
-const LANGS = ['de', 'en', 'ko'] as const
+const LANGS = ['en', 'de', 'ko'] as const
 type Lang = (typeof LANGS)[number]
 
 const FLAGS: Record<Lang, string> = {
