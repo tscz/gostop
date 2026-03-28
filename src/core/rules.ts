@@ -1,4 +1,4 @@
-import { CardType, CARD_VISUAL, MONTHS } from './cards'
+import { CardType } from './cards'
 import { GamePhase } from './gameState'
 import { calcScore, applyGoMultiplier } from './scoring'
 import { buildExplanation } from './moveExplainer'
@@ -226,9 +226,5 @@ export function applyTurn(
     lastExp: exp,
     history: [...state.history, exp],
     winner,
-    // Only overwrite message when AI plays (player messages set by callGo/callStop persist)
-    ...(isAI
-      ? { message: `AI: ${MONTHS[played.month - 1].en} (${CARD_VISUAL[played.id]?.symbol})` }
-      : {}),
   }
 }
