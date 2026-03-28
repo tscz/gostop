@@ -434,17 +434,18 @@ describe('applyPoktan', () => {
     expect(next.winner).not.toBeNull()
   })
 
-  it('no game over when draw pile still has cards', () => {
+  it('game over when next player has no hand cards even if pile has cards', () => {
+    // After player Poktan, AI has 0 hand cards — neither player can play from hand
     const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
     const state = makeState({
       playerHand: [jan1, jan2, jan3],
       aiHand: [],
       field: [jan4],
-      drawPile: [c(9)], // pile not empty
+      drawPile: [c(9)], // pile not empty, but AI still can't play from hand
       pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
     })
     const next = applyPoktan(state, false, t)
-    expect(next.phase).toBe(GamePhase.SELECT)
-    expect(next.winner).toBeNull()
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).not.toBeNull()
   })
 })
