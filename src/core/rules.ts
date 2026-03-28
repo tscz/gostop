@@ -153,10 +153,13 @@ export function applyPoktan(
     who: isAI ? 'ai' : 'player',
   }
 
-  // Game over check (e.g. player used last 3 cards for Poktan)
-  const gameOver = newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0
-  const finalPlayerPts = gameOver && !isAI
-    ? applyGoMultiplier(newPts, state.goCount)
+  // Game over check: both hands + pile empty, OR the next player has no cards to play
+  const nextPlayerHand = isAI ? newPH : newAH
+  const gameOver =
+    (newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0) ||
+    nextPlayerHand.length === 0
+  const finalPlayerPts = gameOver
+    ? applyGoMultiplier(isAI ? state.playerScore : newPts, state.goCount)
     : isAI ? state.playerScore : newPts
   const finalAiPts = isAI ? newPts : state.aiScore
   let phase: GameState['phase'] = GamePhase.SELECT
@@ -167,8 +170,7 @@ export function applyPoktan(
   }
 
   // Detect Poktan for the next player (only if game isn't over)
-  const nextHand = isAI ? newPH : newAH
-  const pendingPoktan = !gameOver ? detectPoktan(nextHand, newField) : null
+  const pendingPoktan = !gameOver ? detectPoktan(nextPlayerHand, newField) : null
 
   return {
     ...state,
@@ -311,8 +313,11 @@ export function applyTurn(
   })
   const exp: MoveExplanation = { ...expBase, who: isAI ? 'ai' : 'player' }
 
-  // Game over check
-  const gameOver = newPH.length === 0 && newAH.length === 0 && newDraw.length === 0
+  // Game over check: both hands + pile empty, OR the next player has no cards to play
+  const nextPlayerHand = isAI ? newPH : newAH
+  const gameOver =
+    (newPH.length === 0 && newAH.length === 0 && newDraw.length === 0) ||
+    nextPlayerHand.length === 0
   // R9: after calling GO, player must gain ≥1 point before calling GO/STOP again
   const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
   const canCall = !isAI && newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo

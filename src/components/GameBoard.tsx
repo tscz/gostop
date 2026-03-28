@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
 import { GamePhase } from '../core/gameState'
 import { selectAiCard } from '../core/ai'
+import type { Card } from '../core/cards'
 import CardSVG from './CardSVG'
 import ScorePanel from './ScorePanel'
 import ExplainerPanel from './ExplainerPanel'
@@ -17,8 +18,9 @@ export default function GameBoard() {
   const { state: g, playCard, chooseMatch, declarePoktan, callGo, callStop, newGame, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const aiClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const [helpOpen, setHelpOpen] = useState(false)
-  const [aiRevealCard, setAiRevealCard] = useState<import('../core/cards').Card | null>(null)
+  const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
 
   // AI turn effect — sequential: wait for player animation → flip → move
   useEffect(() => {
@@ -32,12 +34,13 @@ export default function GameBoard() {
       aiTimerRef.current = setTimeout(() => {
         playAiTurn()
         // Step 3: keep source alive so layoutId flight completes
-        setTimeout(() => setAiRevealCard(null), 500)
+        aiClearTimerRef.current = setTimeout(() => setAiRevealCard(null), 500)
       }, 700 + 550 + 900)
     }
     return () => {
       clearTimeout(aiRevealTimerRef.current)
       clearTimeout(aiTimerRef.current)
+      clearTimeout(aiClearTimerRef.current)
       setAiRevealCard(null)
     }
   }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
@@ -222,7 +225,7 @@ export default function GameBoard() {
               />
             </div>
             <div className="flex gap-2 flex-wrap min-h-[4rem] items-end">
-              <AnimatePresence>
+              <AnimatePresence mode="popLayout">
                 {g.playerHand.map(c => (
                   <motion.div
                     key={c.id}
