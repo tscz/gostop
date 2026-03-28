@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
@@ -67,6 +67,15 @@ export default function GameBoard() {
     }
   }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
 
+  // Responsive card sizes — larger on wide desktop
+  const is2xl = useMemo(() => window.matchMedia('(min-width: 1536px)').matches, [])
+  const sz = useMemo(() => ({
+    ai: is2xl ? 54 : 44,
+    field: is2xl ? 64 : 52,
+    hand: is2xl ? 72 : 58,
+    pile: is2xl ? 54 : 44,
+  }), [is2xl])
+
   // Block player interaction while pile flip is in progress
   const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT && !drawnCard
   const isGoStop = g.phase === GamePhase.GOSTOP
@@ -92,7 +101,7 @@ export default function GameBoard() {
       <Header onHelpOpen={() => setHelpOpen(true)} />
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
-      <div className="flex-1 flex flex-col xl:flex-row gap-3 p-3 max-w-7xl mx-auto w-full">
+      <div className="flex-1 flex flex-col xl:flex-row gap-3 p-3 xl:p-5 w-full">
 
         {/* BOARD */}
         <div className="flex-1 flex flex-col gap-2.5 min-w-0">
@@ -127,7 +136,7 @@ export default function GameBoard() {
                     exit={{ scale: 0.7, opacity: 0, y: -16 }}
                     transition={{ type: 'spring', stiffness: 350, damping: 22 }}
                   >
-                    <CardSVG card={{ id: `back_${i}`, month: 0 }} faceDown size={44} />
+                    <CardSVG card={{ id: `back_${i}`, month: 0 }} faceDown size={sz.ai} />
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -136,7 +145,7 @@ export default function GameBoard() {
               {aiRevealCard && (
                 <motion.div
                   layoutId={`card-${aiRevealCard.id}`}
-                  style={{ position: 'relative', width: 44, height: 67 }}
+                  style={{ position: 'relative', width: sz.ai, height: Math.round(sz.ai * 1.52) }}
                 >
                   {/* Back face — scaleX squishes to 0 over first half */}
                   <motion.div
@@ -144,7 +153,7 @@ export default function GameBoard() {
                     animate={{ scaleX: [1, 0, 0] }}
                     transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
                   >
-                    <CardSVG card={{ id: 'back_reveal', month: 0 }} faceDown size={44} />
+                    <CardSVG card={{ id: 'back_reveal', month: 0 }} faceDown size={sz.ai} />
                   </motion.div>
                   {/* Front face — scaleX expands from 0 over second half */}
                   <motion.div
@@ -152,7 +161,7 @@ export default function GameBoard() {
                     animate={{ scaleX: [0, 0, 1] }}
                     transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
                   >
-                    <CardSVG card={aiRevealCard} size={44} />
+                    <CardSVG card={aiRevealCard} size={sz.ai} />
                   </motion.div>
                 </motion.div>
               )}
@@ -183,7 +192,7 @@ export default function GameBoard() {
                         exit={{ scale: 1.2, opacity: 0 }}
                         transition={{ type: 'spring', stiffness: 380, damping: 22 }}
                       >
-                        <CardSVG card={c} size={52} />
+                        <CardSVG card={c} size={sz.field} />
                       </motion.div>
                     ))
                   )}
@@ -198,24 +207,24 @@ export default function GameBoard() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
                     className="flex-shrink-0 ml-1"
-                    style={{ position: 'relative', width: 52, height: 79 }}
+                    style={{ position: 'relative', width: sz.pile + 8, height: Math.round(sz.pile * 1.52) + 8 }}
                   >
                     {/* Shadow cards for stack depth */}
                     {g.drawPile.length > 2 && (
                       <div style={{ position: 'absolute', top: -4, left: -4, opacity: 0.35 }}>
-                        <CardSVG card={{ id: 'pile_2', month: 0 }} faceDown size={44} />
+                        <CardSVG card={{ id: 'pile_2', month: 0 }} faceDown size={sz.pile} />
                       </div>
                     )}
                     {g.drawPile.length > 1 && (
                       <div style={{ position: 'absolute', top: -2, left: -2, opacity: 0.65 }}>
-                        <CardSVG card={{ id: 'pile_1', month: 0 }} faceDown size={44} />
+                        <CardSVG card={{ id: 'pile_1', month: 0 }} faceDown size={sz.pile} />
                       </div>
                     )}
                     {/* Top card — flip when a card is being drawn */}
                     {drawnCard ? (
                       <motion.div
                         layoutId={`card-${drawnCard.id}`}
-                        style={{ position: 'absolute', top: 0, left: 0, width: 44, height: 67 }}
+                        style={{ position: 'absolute', top: 0, left: 0, width: sz.pile, height: Math.round(sz.pile * 1.52) }}
                       >
                         {/* Back face squishes away */}
                         <motion.div
@@ -223,7 +232,7 @@ export default function GameBoard() {
                           animate={{ scaleX: [1, 0, 0] }}
                           transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
                         >
-                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={44} />
+                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={sz.pile} />
                         </motion.div>
                         {/* Front face expands in */}
                         <motion.div
@@ -231,7 +240,7 @@ export default function GameBoard() {
                           animate={{ scaleX: [0, 0, 1] }}
                           transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
                         >
-                          <CardSVG card={drawnCard} size={44} />
+                          <CardSVG card={drawnCard} size={sz.pile} />
                         </motion.div>
                       </motion.div>
                     ) : (
@@ -244,7 +253,7 @@ export default function GameBoard() {
                           exit={{ y: -28, opacity: 0, scale: 0.85 }}
                           transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                         >
-                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={44} />
+                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={sz.pile} />
                         </motion.div>
                       </AnimatePresence>
                     )}
@@ -315,7 +324,7 @@ export default function GameBoard() {
                     onClick={() => chooseMatch(c)}
                     className="transition-transform hover:scale-110 active:scale-95"
                   >
-                    <CardSVG card={c} size={58} highlighted />
+                    <CardSVG card={c} size={sz.hand} highlighted />
                   </button>
                 ))}
               </div>
@@ -361,7 +370,7 @@ export default function GameBoard() {
                   >
                     <CardSVG
                       card={c}
-                      size={58}
+                      size={sz.hand}
                       onClick={isPlayer ? () => handlePlayCard(c) : null}
                       dimmed={!isPlayer && !isChoose}
                     />
@@ -423,7 +432,7 @@ export default function GameBoard() {
         </div>
 
         {/* SIDEBAR */}
-        <div className="xl:w-72 flex flex-col gap-2.5 min-w-0">
+        <div className="xl:w-80 2xl:w-96 flex flex-col gap-2.5 min-w-0">
           <ExplainerPanel exp={g.lastExp} />
 
           {g.history.length > 0 && (
