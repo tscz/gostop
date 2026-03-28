@@ -1,18 +1,14 @@
 # 고스톱 Trainer
 
-A browser-based Go-Stop (고스톱) card game trainer — rule-based AI opponent, animated scoring explanations, and full DE / EN / KO support. Runs entirely in the browser with no backend.
+<img src="public/assets/cards/Hwatu_January_Hikari.svg" width="60" title="January – Crane"><img src="public/assets/cards/Hwatu_March_Hikari.svg" width="60" title="March – Curtain"><img src="public/assets/cards/Hwatu_August_Hikari.svg" width="60" title="August – Full Moon"><img src="public/assets/cards/Hwatu_November_Hikari.svg" width="60" title="November – Phoenix"><img src="public/assets/cards/Hwatu_December_Hikari.svg" width="60" title="December – Rain Man"><img src="public/assets/cards/Hwatu_February_Tane.svg" width="60" title="February – Nightingale"><img src="public/assets/cards/Hwatu_April_Tane.svg" width="60" title="April – Cuckoo"><img src="public/assets/cards/Hwatu_August_Tane.svg" width="60" title="August – Geese">
 
-## Stack
+A browser-based **Go-Stop (고스톱)** card game trainer — rule-based AI opponent, animated scoring explanations, and full DE / EN / KO support. Runs entirely in the browser with no backend.
 
-| Layer | Tech |
-|-------|------|
-| Framework | React 18 + TypeScript (Vite) |
-| Styling | Tailwind CSS |
-| Animations | Framer Motion |
-| State | Zustand |
-| i18n | i18next + react-i18next |
-| Testing | Vitest |
-| Deployment | GitHub Pages (static) |
+▶ **[Play it live](https://tscz.github.io/gostop)**
+
+Press the **?** button in the top-right corner for in-app rules, scoring combinations, and special rules (available in EN / DE / KO).
+
+---
 
 ## Getting started
 
@@ -52,9 +48,14 @@ src/
 └── main.tsx
 ```
 
-## Deployment to GitHub Pages
+## Deployment
 
-```bash
-npm run build
-# Deploy the dist/ folder to your gh-pages branch
-```
+Pushing a GitHub Release triggers the `deploy-release.yml` workflow which builds and deploys to the `gh-pages` branch automatically. Every push runs the CI build via `build.yml`.
+
+---
+
+## Card attribution
+
+Hwatu card artwork by **Marcus Richert**, based on Louie Mantia Jr.'s Hanafuda graphics.
+Licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Source: [Wikimedia Commons – Category:SVG Hwatu](https://commons.wikimedia.org/wiki/Category:SVG_Hwatu)

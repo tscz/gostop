@@ -10,7 +10,11 @@ const FLAGS: Record<Lang, string> = {
   ko: '🇰🇷',
 }
 
-export default function Header() {
+interface HeaderProps {
+  onHelpOpen: () => void
+}
+
+export default function Header({ onHelpOpen }: HeaderProps) {
   const { t, i18n } = useTranslation()
   const { state, newGame } = useGameStore()
   const lang = i18n.language as Lang
@@ -44,6 +48,12 @@ export default function Header() {
           </button>
         ))}
       </div>
+      <button
+        onClick={onHelpOpen}
+        className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white text-sm font-bold transition-all"
+      >
+        ?
+      </button>
       <button
         onClick={newGame}
         className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all border border-white/10"

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
 import { GamePhase } from '../core/gameState'
@@ -8,11 +8,13 @@ import ExplainerPanel from './ExplainerPanel'
 import Timeline from './Timeline'
 import CapturedArea from './CapturedArea'
 import Header from './Header'
+import HelpModal from './HelpModal'
 
 export default function GameBoard() {
   const { t } = useTranslation()
   const { state: g, playCard, chooseMatch, callGo, callStop, newGame, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const [helpOpen, setHelpOpen] = useState(false)
 
   // AI turn effect
   useEffect(() => {
@@ -39,7 +41,8 @@ export default function GameBoard() {
           'radial-gradient(ellipse 120% 80% at 50% 0%, #0c1a2e 0%, #060810 60%, #000 100%)',
       }}
     >
-      <Header />
+      <Header onHelpOpen={() => setHelpOpen(true)} />
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
       <div className="flex-1 flex flex-col xl:flex-row gap-3 p-3 max-w-7xl mx-auto w-full">
 
