@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
 import { GamePhase } from '../core/gameState'
+import { selectAiCard } from '../core/ai'
 import CardSVG from './CardSVG'
 import ScorePanel from './ScorePanel'
 import ExplainerPanel from './ExplainerPanel'
@@ -14,16 +16,30 @@ export default function GameBoard() {
   const { t } = useTranslation()
   const { state: g, playCard, chooseMatch, declarePoktan, callGo, callStop, newGame, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [aiRevealCard, setAiRevealCard] = useState<import('../core/cards').Card | null>(null)
 
-  // AI turn effect
+  // AI turn effect — sequential: wait for player animation → flip → move
   useEffect(() => {
     if (g.turn === 'ai' && g.phase === GamePhase.SELECT) {
+      const card = g.pendingPoktan ? g.pendingPoktan.handCards[0] : selectAiCard(g)
+
+      // Step 1: wait ~700ms for player card to finish animating, then flip
+      aiRevealTimerRef.current = setTimeout(() => setAiRevealCard(card), 700)
+
+      // Step 2: after flip (550ms) + stay visible (900ms) → fire turn
       aiTimerRef.current = setTimeout(() => {
         playAiTurn()
-      }, 900 + Math.random() * 500)
+        // Step 3: keep source alive so layoutId flight completes
+        setTimeout(() => setAiRevealCard(null), 500)
+      }, 700 + 550 + 900)
     }
-    return () => clearTimeout(aiTimerRef.current)
+    return () => {
+      clearTimeout(aiRevealTimerRef.current)
+      clearTimeout(aiTimerRef.current)
+      setAiRevealCard(null)
+    }
   }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
 
   const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT
@@ -67,10 +83,46 @@ export default function GameBoard() {
               />
             </div>
             <div className="flex gap-1.5 flex-wrap min-h-[3rem] items-center">
-              {g.aiHand.map((_, i) => (
-                <CardSVG key={i} card={{ id: `back_${i}`, month: 0 }} faceDown size={44} />
-              ))}
-              {!g.aiHand.length && <span className="text-slate-700 text-xs">–</span>}
+              <AnimatePresence>
+                {(aiRevealCard ? g.aiHand.slice(0, -1) : g.aiHand).map((_, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ scale: 0.7, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.7, opacity: 0, y: -16 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+                  >
+                    <CardSVG card={{ id: `back_${i}`, month: 0 }} faceDown size={44} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Flip reveal: face-down → face-up, then layoutId flies it to the field */}
+              {aiRevealCard && (
+                <motion.div
+                  layoutId={`card-${aiRevealCard.id}`}
+                  style={{ position: 'relative', width: 44, height: 67 }}
+                >
+                  {/* Back face — scaleX squishes to 0 over first half */}
+                  <motion.div
+                    style={{ position: 'absolute', transformOrigin: 'center' }}
+                    animate={{ scaleX: [1, 0, 0] }}
+                    transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                  >
+                    <CardSVG card={{ id: 'back_reveal', month: 0 }} faceDown size={44} />
+                  </motion.div>
+                  {/* Front face — scaleX expands from 0 over second half */}
+                  <motion.div
+                    style={{ position: 'absolute', transformOrigin: 'center' }}
+                    animate={{ scaleX: [0, 0, 1] }}
+                    transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                  >
+                    <CardSVG card={aiRevealCard} size={44} />
+                  </motion.div>
+                </motion.div>
+              )}
+
+              {!g.aiHand.length && !aiRevealCard && <span className="text-slate-700 text-xs">–</span>}
             </div>
           </div>
 
@@ -83,11 +135,25 @@ export default function GameBoard() {
               </span>
             </div>
             <div className="flex gap-2 flex-wrap min-h-[5rem] items-center">
-              {g.field.length === 0 ? (
-                <span className="text-slate-700 text-sm italic">–</span>
-              ) : (
-                g.field.map(c => <CardSVG key={c.id} card={c} size={52} />)
-              )}
+              <AnimatePresence mode="popLayout">
+                {g.field.length === 0 ? (
+                  <span className="text-slate-700 text-sm italic">–</span>
+                ) : (
+                  g.field.map(c => (
+                    <motion.div
+                      key={c.id}
+                      layoutId={`card-${c.id}`}
+                      layout
+                      initial={{ scale: 0.6, opacity: 0, y: -20 }}
+                      animate={{ scale: 1, opacity: 1, y: 0 }}
+                      exit={{ scale: 1.2, opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                    >
+                      <CardSVG card={c} size={52} />
+                    </motion.div>
+                  ))
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -156,15 +222,29 @@ export default function GameBoard() {
               />
             </div>
             <div className="flex gap-2 flex-wrap min-h-[4rem] items-end">
-              {g.playerHand.map(c => (
-                <CardSVG
-                  key={c.id}
-                  card={c}
-                  size={58}
-                  onClick={isPlayer ? () => playCard(c) : null}
-                  dimmed={!isPlayer && !isChoose}
-                />
-              ))}
+              <AnimatePresence>
+                {g.playerHand.map(c => (
+                  <motion.div
+                    key={c.id}
+                    layoutId={`card-${c.id}`}
+                    layout
+                    initial={{ scale: 0.7, opacity: 0, y: 16 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.8, opacity: 0, y: -20 }}
+                    whileHover={isPlayer ? { scale: 1.12, y: -10 } : undefined}
+                    whileTap={isPlayer ? { scale: 0.95 } : undefined}
+                    transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+                    style={{ cursor: isPlayer ? 'pointer' : 'default' }}
+                  >
+                    <CardSVG
+                      card={c}
+                      size={58}
+                      onClick={isPlayer ? () => playCard(c) : null}
+                      dimmed={!isPlayer && !isChoose}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {!g.playerHand.length && <span className="text-slate-700 text-xs">–</span>}
             </div>
 
