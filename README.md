@@ -33,15 +33,7 @@ Open [http://localhost:5173](http://localhost:5173).
 ```
 src/
 ├── core/               # Pure TypeScript game logic (no React)
-│   ├── cards.ts        # Card definitions, 48 Hwatu cards
-│   ├── deck.ts         # Shuffle & deal
-│   ├── gameState.ts    # TypeScript interfaces
-│   ├── rules.ts        # Turn resolution (ppeok, chok, ttadak, poktan)
-│   ├── scoring.ts      # Scoring (gwang, godori, tti, kkeus, pi)
-│   ├── ai.ts           # Rule-based AI heuristic
-│   └── moveExplainer.ts# Structured move explanations
-├── store/
-│   └── gameStore.ts    # Zustand global state
+├── store/              # Zustand global state
 ├── components/         # React UI components
 ├── i18n/               # Translation files (de.json, en.json, ko.json)
 ├── App.tsx
