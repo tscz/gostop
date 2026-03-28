@@ -74,6 +74,11 @@ export default function GameBoard() {
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
   const isOver = g.phase === GamePhase.GAME_OVER
   const canPoktan = isPlayer && g.pendingPoktan !== null
+  // Covers SELECT, GOSTOP, CHOOSE_MATCH — any phase where player must act
+  const isPlayerTurn = g.turn === 'player' && !isOver
+
+  const aiGlow = '0 0 0 2px rgba(248,113,113,0.7), 0 0 20px rgba(248,113,113,0.25)'
+  const playerGlow = '0 0 0 2px rgba(147,197,253,0.7), 0 0 20px rgba(147,197,253,0.25)'
 
   return (
     <div
@@ -93,7 +98,11 @@ export default function GameBoard() {
         <div className="flex-1 flex flex-col gap-2.5 min-w-0">
 
           {/* AI row */}
-          <div className="rounded-2xl border border-white/6 bg-white/3 p-3">
+          <motion.div
+            className="rounded-2xl border border-white/6 bg-white/3 p-3"
+            animate={{ boxShadow: isAI ? aiGlow : 'none', opacity: isPlayerTurn ? 0.4 : 1 }}
+            transition={{ duration: 0.4 }}
+          >
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-red-400/90 font-bold text-sm">🤖 {t('aiLabel')}</span>
@@ -150,7 +159,7 @@ export default function GameBoard() {
 
               {!g.aiHand.length && !aiRevealCard && <span className="text-slate-700 text-xs">–</span>}
             </div>
-          </div>
+          </motion.div>
 
           {/* Field */}
           <div className="rounded-2xl border border-emerald-900/40 bg-emerald-950/15 p-3">
@@ -314,7 +323,11 @@ export default function GameBoard() {
           )}
 
           {/* Player hand */}
-          <div className="rounded-2xl border border-white/6 bg-white/3 p-3">
+          <motion.div
+            className="rounded-2xl border border-white/6 bg-white/3 p-3"
+            animate={{ boxShadow: isPlayerTurn ? playerGlow : 'none', opacity: isAI ? 0.4 : 1 }}
+            transition={{ duration: 0.4 }}
+          >
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-blue-300/90 font-bold text-sm">👤 {t('yourHand')}</span>
@@ -376,7 +389,7 @@ export default function GameBoard() {
                 </button>
               </div>
             )}
-          </div>
+          </motion.div>
 
           {/* Game over */}
           {isOver && (
