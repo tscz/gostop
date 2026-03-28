@@ -19,33 +19,56 @@ export default function GameBoard() {
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const drawnCardTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const drawnCardClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const [helpOpen, setHelpOpen] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
+  const [drawnCard, setDrawnCard] = useState<Card | null>(null)
 
-  // AI turn effect — sequential: wait for player animation → flip → move
+  // Intercept player card play: flip the pile card first, then execute
+  const handlePlayCard = (c: Card) => {
+    const top = g.drawPile[0] ?? null
+    setDrawnCard(top)
+    drawnCardTimerRef.current = setTimeout(() => {
+      playCard(c)
+      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
+    }, 650)
+  }
+
+  // AI turn effect — sequential: wait for player animation → flip hand card → flip pile card → move
   useEffect(() => {
     if (g.turn === 'ai' && g.phase === GamePhase.SELECT) {
       const card = g.pendingPoktan ? g.pendingPoktan.handCards[0] : selectAiCard(g)
+      const top = g.drawPile[0] ?? null
 
-      // Step 1: wait ~700ms for player card to finish animating, then flip
+      // Step 1: wait for player animation, then flip AI hand card
       aiRevealTimerRef.current = setTimeout(() => setAiRevealCard(card), 700)
 
-      // Step 2: after flip (550ms) + stay visible (900ms) → fire turn
-      aiTimerRef.current = setTimeout(() => {
+      // Step 2: after AI card flip, flip the pile card
+      aiTimerRef.current = setTimeout(() => setDrawnCard(top), 700 + 550 + 400)
+
+      // Step 3: after pile flip, fire the turn
+      aiClearTimerRef.current = setTimeout(() => {
         playAiTurn()
-        // Step 3: keep source alive so layoutId flight completes
-        aiClearTimerRef.current = setTimeout(() => setAiRevealCard(null), 500)
-      }, 700 + 550 + 900)
+        setTimeout(() => {
+          setAiRevealCard(null)
+          setDrawnCard(null)
+        }, 500)
+      }, 700 + 550 + 400 + 600)
     }
     return () => {
       clearTimeout(aiRevealTimerRef.current)
       clearTimeout(aiTimerRef.current)
       clearTimeout(aiClearTimerRef.current)
+      clearTimeout(drawnCardTimerRef.current)
+      clearTimeout(drawnCardClearTimerRef.current)
       setAiRevealCard(null)
+      setDrawnCard(null)
     }
   }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
 
-  const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT
+  // Block player interaction while pile flip is in progress
+  const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT && !drawnCard
   const isGoStop = g.phase === GamePhase.GOSTOP
   const isChoose = g.phase === GamePhase.CHOOSE_MATCH
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
@@ -133,28 +156,112 @@ export default function GameBoard() {
           <div className="rounded-2xl border border-emerald-900/40 bg-emerald-950/15 p-3">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-emerald-500/80 text-sm font-semibold">🍀 {t('field')}</span>
-              <span className="text-white/25 text-xs">
-                {t('pile')}: {g.drawPile.length}
-              </span>
             </div>
-            <div className="flex gap-2 flex-wrap min-h-[5rem] items-center">
-              <AnimatePresence mode="popLayout">
-                {g.field.length === 0 ? (
-                  <span className="text-slate-700 text-sm italic">–</span>
-                ) : (
-                  g.field.map(c => (
+            <div className="flex gap-2 min-h-[5rem] items-center">
+              {/* Field cards */}
+              <div className="flex gap-2 flex-wrap flex-1 items-center">
+                <AnimatePresence mode="popLayout">
+                  {g.field.length === 0 ? (
+                    <span className="text-slate-700 text-sm italic">–</span>
+                  ) : (
+                    g.field.map(c => (
+                      <motion.div
+                        key={c.id}
+                        layoutId={`card-${c.id}`}
+                        layout
+                        initial={{ scale: 0.6, opacity: 0, y: -20 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 1.2, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                      >
+                        <CardSVG card={c} size={52} />
+                      </motion.div>
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Draw pile */}
+              <AnimatePresence>
+                {g.drawPile.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="flex-shrink-0 ml-1"
+                    style={{ position: 'relative', width: 52, height: 79 }}
+                  >
+                    {/* Shadow cards for stack depth */}
+                    {g.drawPile.length > 2 && (
+                      <div style={{ position: 'absolute', top: -4, left: -4, opacity: 0.35 }}>
+                        <CardSVG card={{ id: 'pile_2', month: 0 }} faceDown size={44} />
+                      </div>
+                    )}
+                    {g.drawPile.length > 1 && (
+                      <div style={{ position: 'absolute', top: -2, left: -2, opacity: 0.65 }}>
+                        <CardSVG card={{ id: 'pile_1', month: 0 }} faceDown size={44} />
+                      </div>
+                    )}
+                    {/* Top card — flip when a card is being drawn */}
+                    {drawnCard ? (
+                      <motion.div
+                        layoutId={`card-${drawnCard.id}`}
+                        style={{ position: 'absolute', top: 0, left: 0, width: 44, height: 67 }}
+                      >
+                        {/* Back face squishes away */}
+                        <motion.div
+                          style={{ position: 'absolute', top: 0, left: 0, transformOrigin: 'center' }}
+                          animate={{ scaleX: [1, 0, 0] }}
+                          transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                        >
+                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={44} />
+                        </motion.div>
+                        {/* Front face expands in */}
+                        <motion.div
+                          style={{ position: 'absolute', top: 0, left: 0, transformOrigin: 'center' }}
+                          animate={{ scaleX: [0, 0, 1] }}
+                          transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                        >
+                          <CardSVG card={drawnCard} size={44} />
+                        </motion.div>
+                      </motion.div>
+                    ) : (
+                      <AnimatePresence>
+                        <motion.div
+                          key={g.drawPile.length}
+                          style={{ position: 'absolute', top: 0, left: 0 }}
+                          initial={{ y: -18, opacity: 0, scale: 0.85 }}
+                          animate={{ y: 0, opacity: 1, scale: 1 }}
+                          exit={{ y: -28, opacity: 0, scale: 0.85 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                        >
+                          <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={44} />
+                        </motion.div>
+                      </AnimatePresence>
+                    )}
+                    {/* Count badge */}
                     <motion.div
-                      key={c.id}
-                      layoutId={`card-${c.id}`}
-                      layout
-                      initial={{ scale: 0.6, opacity: 0, y: -20 }}
-                      animate={{ scale: 1, opacity: 1, y: 0 }}
-                      exit={{ scale: 1.2, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                      key={`count-${g.drawPile.length}`}
+                      initial={{ scale: 1.4, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        background: 'rgba(0,0,0,0.75)',
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        borderRadius: 6,
+                        padding: '1px 5px',
+                        fontFamily: 'monospace',
+                        lineHeight: '16px',
+                      }}
                     >
-                      <CardSVG card={c} size={52} />
+                      {g.drawPile.length}
                     </motion.div>
-                  ))
+                  </motion.div>
                 )}
               </AnimatePresence>
             </div>
@@ -242,7 +349,7 @@ export default function GameBoard() {
                     <CardSVG
                       card={c}
                       size={58}
-                      onClick={isPlayer ? () => playCard(c) : null}
+                      onClick={isPlayer ? () => handlePlayCard(c) : null}
                       dimmed={!isPlayer && !isChoose}
                     />
                   </motion.div>
