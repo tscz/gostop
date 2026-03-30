@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CARD_IMAGE_URL } from '../core/cards'
+import { CARD_IMAGE_URL, MONTHS } from '../core/cards'
 
 interface HelpModalProps {
   onClose: () => void
@@ -147,14 +147,165 @@ const SPECIAL_RULES = {
   ],
 }
 
+// ── Suit composition table ────────────────────────────────────────────────────
+
+const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
+
+// animal: null → card lives in djunk column; show ¹ in animal column
+// Dec ribbon (id 47) doesn't score as ribbon — shown in junk column with ² marker
+const SUIT_DATA: Array<{
+  m: number
+  bright: number[]
+  animal: number[] | null
+  ribbon: number[]
+  ribbonNote: boolean  // show ² in ribbon column even when no card is rendered (Dec)
+  junk: number[]
+  junkNote: number[]   // junk-column card IDs that carry the ² overlay marker
+  djunk: number[]
+}> = [
+  { m:  1, bright: [1],  animal: [],   ribbon: [2],  ribbonNote: false, junk: [3, 4],   junkNote: [],   djunk: [] },
+  { m:  2, bright: [],   animal: [5],  ribbon: [6],  ribbonNote: false, junk: [7, 8],   junkNote: [],   djunk: [] },
+  { m:  3, bright: [9],  animal: [],   ribbon: [10], ribbonNote: false, junk: [11, 12], junkNote: [],   djunk: [] },
+  { m:  4, bright: [],   animal: [13], ribbon: [14], ribbonNote: false, junk: [15, 16], junkNote: [],   djunk: [] },
+  { m:  5, bright: [],   animal: null, ribbon: [18], ribbonNote: false, junk: [19, 20], junkNote: [],   djunk: [17] },
+  { m:  6, bright: [],   animal: [21], ribbon: [22], ribbonNote: false, junk: [23, 24], junkNote: [],   djunk: [] },
+  { m:  7, bright: [],   animal: [25], ribbon: [26], ribbonNote: false, junk: [27, 28], junkNote: [],   djunk: [] },
+  { m:  8, bright: [29], animal: [30], ribbon: [],   ribbonNote: false, junk: [31, 32], junkNote: [],   djunk: [] },
+  { m:  9, bright: [],   animal: null, ribbon: [34], ribbonNote: false, junk: [35, 36], junkNote: [],   djunk: [33] },
+  { m: 10, bright: [],   animal: [37], ribbon: [38], ribbonNote: false, junk: [39, 40], junkNote: [],   djunk: [] },
+  { m: 11, bright: [41], animal: [42], ribbon: [],   ribbonNote: false, junk: [43],     junkNote: [],   djunk: [44] },
+  { m: 12, bright: [45], animal: [46], ribbon: [],   ribbonNote: true,  junk: [47],     junkNote: [47], djunk: [48] },
+]
+
+const SUIT_TABLE_LABELS = {
+  en: {
+    title: 'Card Composition',
+    month: 'Month',
+    bright: 'Bright 광',
+    animal: 'Animal 끗',
+    ribbon: 'Ribbon 띠',
+    junk: 'Junk 피',
+    djunk: 'Double Junk 쌍피',
+    notes: [
+      '¹ May & Sep Animal cards count as 쌍피 (double junk) for scoring.',
+      '² Dec Ribbon card doesn\'t count for ribbon combinations.',
+    ],
+  },
+  de: {
+    title: 'Kartenzusammensetzung',
+    month: 'Monat',
+    bright: 'Licht 광',
+    animal: 'Tier 끗',
+    ribbon: 'Band 띠',
+    junk: 'Junk 피',
+    djunk: 'Doppeljunk 쌍피',
+    notes: [
+      '¹ Mai- & Sep-Tierkarte zählt als 쌍피 (Doppel-Junk) in der Wertung.',
+      '² Dez.-Band zählt nicht für Bandkombinationen.',
+    ],
+  },
+  ko: {
+    title: '카드 구성',
+    month: '달',
+    bright: '광',
+    animal: '끗',
+    ribbon: '띠',
+    junk: '피',
+    djunk: '쌍피',
+    notes: [
+      '¹ 5월·9월 끗은 쌍피(피×2)로 계산됩니다.',
+      '² 12월 띠는 띠 조합에 포함되지 않습니다.',
+    ],
+  },
+}
+
+function SuitTable({ lang }: { lang: Lang }) {
+  const L = SUIT_TABLE_LABELS[lang]
+  return (
+    <Section title={L.title}>
+      <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-slate-800/80 text-center">
+              <th className="text-left px-2 py-1.5 text-slate-400 font-semibold">{L.month}</th>
+              <th className="px-1 py-1.5 text-yellow-400 font-semibold">{L.bright}</th>
+              <th className="px-1 py-1.5 text-green-400 font-semibold">{L.animal}</th>
+              <th className="px-1 py-1.5 text-orange-300 font-semibold">{L.ribbon}</th>
+              <th className="px-1 py-1.5 text-slate-400 font-semibold">{L.junk}</th>
+              <th className="px-1 py-1.5 text-slate-300 font-semibold">{L.djunk}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SUIT_DATA.map((row, i) => {
+              const m = MONTHS[row.m - 1]
+              const calName = lang === 'ko' ? m.ko : lang === 'de' ? MONTH_NAMES_DE[row.m - 1] : MONTH_NAMES_EN[row.m - 1]
+              const flowerName = lang === 'de' ? m.de : m.en
+              return (
+                <tr key={row.m} className={i % 2 === 0 ? 'bg-slate-900/50' : ''}>
+                  <td className="px-2 py-1 text-slate-300 whitespace-nowrap">
+                    <div className="tabular-nums">{row.m}. {calName}</div>
+                    {lang !== 'ko' && <div className="text-slate-600 text-[10px]">{m.ko} ({flowerName})</div>}
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className="flex justify-center gap-0.5">
+                      {row.bright.map(id => <CardImg key={id} id={id} width={36} />)}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1 text-center">
+                    {row.animal === null
+                      ? <span className="text-slate-500 font-bold text-xl">¹</span>
+                      : <div className="flex justify-center gap-0.5">
+                          {row.animal.map(id => <CardImg key={id} id={id} width={36} />)}
+                        </div>
+                    }
+                  </td>
+                  <td className="px-1 py-1 text-center">
+                    <div className="flex justify-center gap-0.5">
+                      {row.ribbon.map(id => <CardImg key={id} id={id} width={36} />)}
+                      {row.ribbonNote && <span className="text-slate-500 font-bold text-xl self-center">²</span>}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className="flex justify-center gap-0.5">
+                      {row.junk.map(id => (
+                        <div key={id} className="relative">
+                          <CardImg id={id} width={36} />
+                          {row.junkNote.includes(id) && (
+                            <span className="absolute -top-0.5 -right-0.5 text-slate-300 font-bold text-sm leading-none bg-slate-900 rounded-full px-px">²</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className="flex justify-center gap-0.5">
+                      {row.djunk.map(id => <CardImg key={id} id={id} width={36} />)}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 space-y-0.5">
+        {L.notes.map(note => (
+          <p key={note} className="text-slate-500 text-xs">{note}</p>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function CardImg({ id }: { id: number }) {
+function CardImg({ id, width = 56 }: { id: number; width?: number }) {
   return (
     <img
       src={CARD_IMAGE_URL[id]}
       alt={`Card ${id}`}
-      width={56}
+      width={width}
       className="rounded-lg shadow-md"
       draggable={false}
     />
@@ -184,6 +335,8 @@ function HowToTab({ lang }: { lang: Lang }) {
         In dieser 2-Spieler-Variante (Matgo / 맞고) erhält jeder Spieler <strong className="text-white">10 Karten</strong>,
         8 liegen auf dem <strong className="text-white">Tisch</strong> und 20 bilden den <strong className="text-white">Zugstapel</strong>.
       </p>
+
+      <SuitTable lang={lang} />
 
       <Divider />
 
@@ -247,6 +400,8 @@ function HowToTab({ lang }: { lang: Lang }) {
         8장은 <strong className="text-white">바닥</strong>에 깔고, 20장은 <strong className="text-white">뽑기 더미</strong>가 됩니다.
       </p>
 
+      <SuitTable lang={lang} />
+
       <Divider />
 
       <Section title="나의 차례">
@@ -309,6 +464,8 @@ function HowToTab({ lang }: { lang: Lang }) {
         In this 2-player version (Matgo / 맞고), each player receives <strong className="text-white">10 cards</strong>,
         8 are placed on the <strong className="text-white">field</strong>, and 20 form the <strong className="text-white">draw pile</strong>.
       </p>
+
+      <SuitTable lang={lang} />
 
       <Divider />
 
