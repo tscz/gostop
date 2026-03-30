@@ -83,7 +83,7 @@ export default function GameBoard() {
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
   const isOver = g.phase === GamePhase.GAME_OVER
   const canPoktan = isPlayer && g.pendingPoktan !== null
-  const canShake = isPlayer && g.pendingShake !== null
+  const canShake = isPlayer && g.pendingShake.length > 0
   // Covers SELECT, GOSTOP, CHOOSE_MATCH — any phase where player must act
   const isPlayerTurn = g.turn === 'player' && !isOver
 
@@ -314,30 +314,30 @@ export default function GameBoard() {
             </div>
           )}
 
-          {/* Shake declaration */}
-          {canShake && g.pendingShake && (
-            <div className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 p-3">
+          {/* Shake declaration — one banner per qualifying month */}
+          {canShake && g.pendingShake.map(shake => (
+            <div key={shake.handCards[0].month} className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 p-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1">
                   <p className="text-purple-300 font-black text-sm mb-0.5">🫨 흔들기 Shake!</p>
                   <p className="text-purple-200/60 text-xs">{t('shakeDesc')}</p>
                 </div>
                 <div className="flex gap-1.5 items-center">
-                  {g.pendingShake.handCards.map(c => (
+                  {shake.handCards.map(c => (
                     <div key={c.id}>
                       <CardSVG card={c} size={46} />
                     </div>
                   ))}
                 </div>
                 <button
-                  onClick={declareShake}
+                  onClick={() => declareShake(shake)}
                   className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all"
                 >
                   🫨 Shake!
                 </button>
               </div>
             </div>
-          )}
+          ))}
 
           {/* Choose match */}
           {isChoose && g.pendingChoose && (

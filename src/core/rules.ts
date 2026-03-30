@@ -1,6 +1,6 @@
 import { CardType } from './cards'
 import { GamePhase } from './gameState'
-import { calcScore, applyGoMultiplier, applyShakeMultiplier, cardValue } from './scoring'
+import { calcScore, finaliseScore, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
 import { deal } from './deck'
 import type { Card } from './cards'
@@ -35,19 +35,20 @@ export function detectPoktan(hand: Card[], field: Card[]): PendingPoktan | null 
 // matching card on the field (distinct from Poktan which requires
 // exactly 1 matching field card).
 // ═══════════════════════════════════════════════════════════════
-export function detectShake(hand: Card[], field: Card[]): PendingShake | null {
+export function detectShake(hand: Card[], field: Card[]): PendingShake[] {
   const byMonth = new Map<number, Card[]>()
   for (const c of hand) {
     if (!byMonth.has(c.month)) byMonth.set(c.month, [])
     byMonth.get(c.month)!.push(c)
   }
+  const result: PendingShake[] = []
   for (const [month, cards] of byMonth) {
     if (cards.length >= 3) {
       const fieldCard = field.find(f => f.month === month)
-      if (!fieldCard) return { handCards: cards.slice(0, 3) }
+      if (!fieldCard) result.push({ handCards: cards.slice(0, 3) })
     }
   }
-  return null
+  return result
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -57,6 +58,7 @@ export function detectShake(hand: Card[], field: Card[]): PendingShake | null {
 // ═══════════════════════════════════════════════════════════════
 export function applyShake(
   state: GameState,
+  _shake: PendingShake,
   t: (key: string) => string,
 ): GameState {
   const exp: MoveExplanation = {
@@ -69,7 +71,7 @@ export function applyShake(
   return {
     ...state,
     shakeCount: state.shakeCount + 1,
-    pendingShake: null,
+    pendingShake: [],
     lastExp: exp,
     history: [...state.history, exp],
   }
@@ -107,7 +109,7 @@ export function initState(): GameState {
       goCount: 0,
       pendingChoose: null,
       pendingPoktan: null,
-      pendingShake: null,
+      pendingShake: [],
       shakeCount: 0,
       _hadTwoMatches: false,
       scoreAtLastGo: 0,
@@ -208,12 +210,11 @@ export function applyPoktan(
   const gameOver =
     (newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0) ||
     nextPlayerHand.length === 0
-  const finalPlayerPts = gameOver
-    ? applyShakeMultiplier(
-        applyGoMultiplier(isAI ? state.playerScore : newPts, state.goCount),
-        state.shakeCount,
-      )
-    : isAI ? state.playerScore : newPts
+  const rawPlayerPts = isAI ? state.playerScore : newPts
+  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
+  const { finalScore: finalPlayerPts, breakdown: finalPlayerBD } = gameOver
+    ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
+    : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
   const finalAiPts = isAI ? newPts : state.aiScore
   let phase: GameState['phase'] = GamePhase.SELECT
   let winner: GameState['winner'] = null
@@ -225,7 +226,7 @@ export function applyPoktan(
   // Detect Poktan + Shake for the next player (only if game isn't over)
   const pendingPoktan = !gameOver ? detectPoktan(nextPlayerHand, newField) : null
   // Only offer shake when it is the player's turn next
-  const pendingShake = !gameOver && isAI ? detectShake(nextPlayerHand, newField) : null
+  const pendingShake = !gameOver && isAI ? detectShake(nextPlayerHand, newField) : []
 
   return {
     ...state,
@@ -237,7 +238,7 @@ export function applyPoktan(
     aiCaptured: isAI ? captured : oppCaptured,
     playerScore: finalPlayerPts,
     aiScore: finalAiPts,
-    playerBreakdown: isAI ? state.playerBreakdown : breakdown,
+    playerBreakdown: finalPlayerBD,
     aiBreakdown: isAI ? breakdown : state.aiBreakdown,
     turn: isAI ? 'player' : 'ai',
     phase,
@@ -381,14 +382,11 @@ export function applyTurn(
   let phase: GameState['phase'] = isAI ? GamePhase.SELECT : canCall ? GamePhase.GOSTOP : GamePhase.SELECT
   let winner: GameState['winner'] = null
   // Apply GO + shake multipliers to player score at natural game end
-  const finalPlayerPts = gameOver
-    ? applyShakeMultiplier(
-        applyGoMultiplier(isAI ? state.playerScore : newPts, state.goCount),
-        state.shakeCount,
-      )
-    : isAI
-      ? state.playerScore
-      : newPts
+  const rawPlayerPts = isAI ? state.playerScore : newPts
+  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
+  const { finalScore: finalPlayerPts, breakdown: finalPlayerBD } = gameOver
+    ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
+    : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
   const finalAiPts = isAI ? newPts : state.aiScore
   if (gameOver) {
     phase = GamePhase.GAME_OVER
@@ -400,7 +398,7 @@ export function applyTurn(
   const nextHand = isAI ? newPH : newAH
   const pendingPoktan = !gameOver ? detectPoktan(nextHand, newField) : null
   // Only offer shake when it is the player's turn next (AI ignores shake)
-  const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField) : null
+  const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField) : []
 
   return {
     ...state, // scoreAtLastGo carried through via spread
@@ -413,7 +411,7 @@ export function applyTurn(
     aiCaptured: isAI ? captured : oppCaptured,
     playerScore: finalPlayerPts,
     aiScore: finalAiPts,
-    playerBreakdown: isAI ? state.playerBreakdown : breakdown,
+    playerBreakdown: finalPlayerBD,
     aiBreakdown: isAI ? breakdown : state.aiBreakdown,
     turn: isAI ? 'player' : 'ai',
     phase,

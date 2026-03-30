@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import i18n from '../i18n'
 import { GamePhase } from '../core/gameState'
 import { initState, applyTurn, applyPoktan, applyShake } from '../core/rules'
-import { applyGoMultiplier, applyShakeMultiplier } from '../core/scoring'
+import { finaliseScore } from '../core/scoring' // used in finalisePlayerScore
 import { selectAiCard } from '../core/ai'
-import type { GameState } from '../core/gameState'
+import type { GameState, PendingShake } from '../core/gameState'
 import type { Card } from '../core/cards'
 
 // ═══════════════════════════════════════════════════════════════
@@ -17,7 +17,7 @@ interface GameStore {
   playCard: (card: Card) => void
   chooseMatch: (matchCard: Card) => void
   declarePoktan: () => void
-  declareShake: () => void
+  declareShake: (shake: PendingShake) => void
   callGo: () => void
   callStop: () => void
   newGame: () => void
@@ -27,6 +27,21 @@ interface GameStore {
 // Helper to get current translation function
 function getT() {
   return (key: string) => i18n.t(key)
+}
+
+// Compute the player's final score + breakdown after GO and shake multipliers.
+// Used in every game-end path so the displayed total always matches the breakdown sum.
+function finalisePlayerScore(state: GameState): {
+  score: number
+  breakdown: GameState['playerBreakdown']
+} {
+  const { finalScore: score, breakdown } = finaliseScore(
+    state.playerScore,
+    state.goCount,
+    state.shakeCount,
+    state.playerBreakdown,
+  )
+  return { score, breakdown }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -64,11 +79,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
-  declareShake: () => {
+  declareShake: (shake: PendingShake) => {
     set(store => {
       const prev = store.state
-      if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT || !prev.pendingShake) return store
-      return { state: applyShake(prev, getT()) }
+      if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT) return store
+      if (!prev.pendingShake.some(s => s.handCards[0].month === shake.handCards[0].month)) return store
+      return { state: applyShake(prev, shake, getT()) }
     })
   },
 
@@ -108,6 +124,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           phase: GamePhase.SELECT,
           turn: 'ai' as const,
           message: `GO! ×${prev.goCount + 1}`,
+          pendingShake: [],
         },
       }
     })
@@ -119,38 +136,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Guard against double-click: only act when in GOSTOP phase
       if (prev.phase !== GamePhase.GOSTOP) return store
 
-      const finalPlayerScore = applyShakeMultiplier(applyGoMultiplier(prev.playerScore, prev.goCount), prev.shakeCount)
+      const { score: finalPlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(prev)
       const winner: GameState['winner'] =
         finalPlayerScore > prev.aiScore
           ? 'player'
           : prev.aiScore > finalPlayerScore
             ? 'ai'
             : 'draw'
-      // Add GO bonus entry to breakdown so ScorePanel total matches
-      const goBreakdown =
-        prev.goCount > 0
-          ? [
-              ...prev.playerBreakdown,
-              {
-                key: 'go_bonus',
-                emoji: '🔥',
-                label: `GO ×${prev.goCount} 보너스`,
-                pts: finalPlayerScore - prev.playerScore,
-              },
-            ]
-          : prev.playerBreakdown
 
       return {
         state: {
           ...prev,
           playerScore: finalPlayerScore,
-          playerBreakdown: goBreakdown,
+          playerBreakdown: finalBreakdown,
           phase: GamePhase.GAME_OVER,
+          pendingShake: [],
           winner,
           message:
-            prev.goCount > 0
-              ? `STOP! GO×${prev.goCount} → ${finalPlayerScore}P`
-              : 'STOP!',
+            prev.goCount > 0 && prev.shakeCount > 0
+              ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+              : prev.goCount > 0
+                ? `STOP! GO×${prev.goCount} → ${finalPlayerScore}P`
+                : prev.shakeCount > 0
+                  ? `STOP! 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+                  : 'STOP!',
         },
       }
     })
@@ -169,13 +178,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (prev.pendingPoktan) {
         const newState = applyPoktan(prev, true, getT())
         if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {
-          const lead = newState.aiScore - newState.playerScore
-          if (lead > 0) {
+          const { score: effectivePlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(newState)
+          if (newState.aiScore > effectivePlayerScore) {
             return {
               state: {
                 ...newState,
                 phase: GamePhase.GAME_OVER,
                 winner: 'ai' as const,
+                playerScore: effectivePlayerScore,
+                playerBreakdown: finalBreakdown,
+                pendingShake: [],
                 message: 'AI: STOP!',
               },
             }
@@ -189,14 +201,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // AI Go/Stop decision after its turn
       if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {
-        const lead = newState.aiScore - newState.playerScore
+        const { score: effectivePlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(newState)
         // Only call STOP when strictly ahead — on a tie, keep playing
-        if (lead > 0) {
+        if (newState.aiScore > effectivePlayerScore) {
           return {
             state: {
               ...newState,
               phase: GamePhase.GAME_OVER,
               winner: 'ai' as const,
+              playerScore: effectivePlayerScore,
+              playerBreakdown: finalBreakdown,
+              pendingShake: [],
               message: 'AI: STOP!',
             },
           }

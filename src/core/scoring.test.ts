@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier } from './scoring'
+import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore } from './scoring'
 import { DECK, CardType } from './cards'
 
 const c = (id: number) => DECK.find(card => card.id === id)!
@@ -79,6 +79,53 @@ describe('applyShakeMultiplier', () => {
   })
   it('0 score stays 0 regardless of shakeCount', () => {
     expect(applyShakeMultiplier(0, 3)).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────
+// finaliseScore
+// ─────────────────────────────────────────────
+describe('finaliseScore', () => {
+  const base = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 3 }]
+
+  it('0 GO + 0 shake → score and breakdown unchanged', () => {
+    const { finalScore, breakdown } = finaliseScore(3, 0, 0, base)
+    expect(finalScore).toBe(3)
+    expect(breakdown).toHaveLength(1)
+    expect(breakdown[0].key).toBe('samgwang')
+  })
+
+  it('1 GO → +1 bonus, go_bonus entry appended', () => {
+    const { finalScore, breakdown } = finaliseScore(3, 1, 0, base)
+    expect(finalScore).toBe(4)
+    const bonus = breakdown.find(b => b.key === 'go_bonus')
+    expect(bonus).toBeDefined()
+    expect(bonus!.pts).toBe(1)
+    expect(breakdown.reduce((s, b) => s + b.pts, 0)).toBe(finalScore)
+  })
+
+  it('1 shake → ×2, shake_bonus entry appended', () => {
+    const { finalScore, breakdown } = finaliseScore(3, 0, 1, base)
+    expect(finalScore).toBe(6)
+    const bonus = breakdown.find(b => b.key === 'shake_bonus')
+    expect(bonus).toBeDefined()
+    expect(bonus!.pts).toBe(3) // 6 - 3
+    expect(breakdown.reduce((s, b) => s + b.pts, 0)).toBe(finalScore)
+  })
+
+  it('1 GO + 1 shake → both bonus entries, total matches finalScore', () => {
+    const { finalScore, breakdown } = finaliseScore(3, 1, 1, base)
+    // applyGoMultiplier(3,1)=4; applyShakeMultiplier(4,1)=8
+    expect(finalScore).toBe(8)
+    expect(breakdown.find(b => b.key === 'go_bonus')).toBeDefined()
+    expect(breakdown.find(b => b.key === 'shake_bonus')).toBeDefined()
+    expect(breakdown.reduce((s, b) => s + b.pts, 0)).toBe(8)
+  })
+
+  it('does not mutate the input breakdown array', () => {
+    const input = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 3 }]
+    finaliseScore(3, 1, 1, input)
+    expect(input).toHaveLength(1)
   })
 })
 

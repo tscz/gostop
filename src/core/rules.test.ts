@@ -28,7 +28,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     goCount: 0,
     pendingChoose: null,
     pendingPoktan: null,
-    pendingShake: null,
+    pendingShake: [],
     shakeCount: 0,
     message: '',
     winner: null,
@@ -566,47 +566,57 @@ describe('applyPoktan', () => {
 // ─── detectShake ──────────────────────────────────────────────────────────────
 
 describe('detectShake', () => {
-  it('returns null when hand has no 3-of-a-kind', () => {
-    expect(detectShake([c(1), c(5), c(9)], [])).toBeNull()
+  it('returns empty array when hand has no 3-of-a-kind', () => {
+    expect(detectShake([c(1), c(5), c(9)], [])).toHaveLength(0)
   })
 
-  it('returns null when 3-of-a-kind in hand but a field card exists for that month (poktan, not shake)', () => {
-    // Jan: c(1), c(2), c(3) in hand; c(4) on field → poktan territory
-    expect(detectShake([c(1), c(2), c(3)], [c(4)])).toBeNull()
+  it('returns empty array when 3-of-a-kind in hand but a field card exists (poktan, not shake)', () => {
+    // Jan: c(1), c(2), c(3) in hand; c(4) on field → poktan territory, not shake
+    expect(detectShake([c(1), c(2), c(3)], [c(4)])).toHaveLength(0)
   })
 
-  it('returns handCards when 3-of-a-kind in hand and no matching field card', () => {
+  it('returns one entry when 3-of-a-kind in hand with no matching field card', () => {
     const result = detectShake([c(1), c(2), c(3)], [c(9)])
-    expect(result).not.toBeNull()
-    expect(result!.handCards).toHaveLength(3)
-    expect(result!.handCards.every(h => h.month === 1)).toBe(true)
+    expect(result).toHaveLength(1)
+    expect(result[0].handCards).toHaveLength(3)
+    expect(result[0].handCards.every(h => h.month === 1)).toBe(true)
   })
 
-  it('returns null when only 2 cards of a month in hand', () => {
-    expect(detectShake([c(1), c(2), c(9)], [])).toBeNull()
+  it('returns empty array when only 2 cards of a month in hand', () => {
+    expect(detectShake([c(1), c(2), c(9)], [])).toHaveLength(0)
+  })
+
+  it('returns one entry per qualifying month when multiple months have 3-of-a-kind', () => {
+    // 3 Jan cards (c1-c3) + 3 Feb cards (c5-c7), no field cards for either
+    const result = detectShake([c(1), c(2), c(3), c(5), c(6), c(7)], [])
+    expect(result).toHaveLength(2)
+    const months = result.map(r => r.handCards[0].month).sort()
+    expect(months).toEqual([1, 2])
   })
 })
 
 // ─── applyShake ───────────────────────────────────────────────────────────────
 
+const janShake = { handCards: [c(1), c(2), c(3)] }
+
 describe('applyShake', () => {
   it('increments shakeCount and clears pendingShake', () => {
     const state = makeState({
       playerHand: [c(1), c(2), c(3)],
-      pendingShake: { handCards: [c(1), c(2), c(3)] },
+      pendingShake: [janShake],
       shakeCount: 0,
     })
-    const next = applyShake(state, t)
+    const next = applyShake(state, janShake, t)
     expect(next.shakeCount).toBe(1)
-    expect(next.pendingShake).toBeNull()
+    expect(next.pendingShake).toHaveLength(0)
   })
 
   it('stacks: second shake increments to 2', () => {
     const state = makeState({
-      pendingShake: { handCards: [c(1), c(2), c(3)] },
+      pendingShake: [janShake],
       shakeCount: 1,
     })
-    const next = applyShake(state, t)
+    const next = applyShake(state, janShake, t)
     expect(next.shakeCount).toBe(2)
   })
 
@@ -614,16 +624,15 @@ describe('applyShake', () => {
     const hand = [c(1), c(2), c(3), c(5)]
     const state = makeState({
       playerHand: hand,
-      pendingShake: { handCards: [c(1), c(2), c(3)] },
+      pendingShake: [janShake],
     })
-    const next = applyShake(state, t)
+    const next = applyShake(state, janShake, t)
     expect(next.playerHand).toEqual(hand)
     expect(next.turn).toBe('player')
     expect(next.phase).toBe(GamePhase.SELECT)
   })
 
-  it('pendingShake is set after AI turn when player holds 3-of-a-kind with no field match', () => {
-    // AI plays a Feb card; player's hand has 3 Jan cards and Jan is off the field.
+  it('pendingShake has one entry after AI turn when player holds 3-of-a-kind with no field match', () => {
     const feb5 = c(5), feb6 = c(6)
     const jan1 = c(1), jan2 = c(2), jan3 = c(3)
     const state = makeState({
@@ -634,21 +643,20 @@ describe('applyShake', () => {
       turn: 'ai',
     })
     const next = applyTurn(state, feb5, true, t)
-    expect(next.pendingShake).not.toBeNull()
-    expect(next.pendingShake!.handCards.every(h => h.month === 1)).toBe(true)
+    expect(next.pendingShake).toHaveLength(1)
+    expect(next.pendingShake[0].handCards.every(h => h.month === 1)).toBe(true)
   })
 
-  it('pendingShake is null after player turn (shake only offered at start of player turn)', () => {
+  it('pendingShake is empty after player turn (shake only offered at start of player turn)', () => {
     const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
-    // Player plays jan4; after turn it is AI's turn → no pendingShake offered
     const state = makeState({
       playerHand: [jan4],
       aiHand: [c(5)],
-      field: [jan1, jan2, jan3], // 3 Jan cards on field → jan4 is sassak
+      field: [jan1, jan2, jan3],
       drawPile: [],
     })
     const next = applyTurn(state, jan4, false, t)
-    expect(next.pendingShake).toBeNull()
+    expect(next.pendingShake).toHaveLength(0)
   })
 
   it('shake multiplier doubles player score at game end', () => {
@@ -666,5 +674,46 @@ describe('applyShake', () => {
     const next = applyTurn(state, feb5, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
     expect(next.playerScore).toBe(6) // 3 × 2^1
+  })
+
+  it('playerBreakdown includes shake_bonus entry at natural game end', () => {
+    // Ensures ScorePanel total matches breakdown sum when game ends naturally.
+    const feb5 = c(5)
+    const state = makeState({
+      playerHand: [feb5],
+      playerCaptured: [c(1), c(9), c(29)], // samgwang = 3 pts
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      shakeCount: 1,
+    })
+    const next = applyTurn(state, feb5, false, t)
+    expect(next.playerScore).toBe(6)
+    const shakeEntry = next.playerBreakdown.find(b => b.key === 'shake_bonus')
+    expect(shakeEntry).toBeDefined()
+    expect(shakeEntry!.pts).toBe(3) // 6 - 3 = 3 bonus pts
+    const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
+    expect(total).toBe(next.playerScore)
+  })
+
+  it('playerBreakdown includes go_bonus and shake_bonus at natural game end', () => {
+    const feb5 = c(5)
+    const state = makeState({
+      playerHand: [feb5],
+      playerCaptured: [c(1), c(9), c(29)], // samgwang = 3 pts
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      goCount: 1,   // +1 bonus → 4 pts
+      shakeCount: 1, // ×2 → 8 pts
+    })
+    const next = applyTurn(state, feb5, false, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    // goMultiplier(3, 1) = 4; shakeMultiplier(4, 1) = 8
+    expect(next.playerScore).toBe(8)
+    expect(next.playerBreakdown.find(b => b.key === 'go_bonus')).toBeDefined()
+    expect(next.playerBreakdown.find(b => b.key === 'shake_bonus')).toBeDefined()
+    const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
+    expect(total).toBe(8)
   })
 })

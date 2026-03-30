@@ -78,7 +78,7 @@ export interface GameState {
   goCount: number
   pendingChoose: PendingChoose | null
   pendingPoktan: PendingPoktan | null
-  pendingShake: PendingShake | null
+  pendingShake: PendingShake[]
   shakeCount: number
   message: string
   winner: 'player' | 'ai' | 'draw' | null

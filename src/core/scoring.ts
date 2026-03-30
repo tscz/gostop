@@ -99,6 +99,30 @@ export function applyShakeMultiplier(score: number, shakeCount: number): number 
 }
 
 // ═══════════════════════════════════════════════════════════════
+// FINALISE SCORE
+// Applies GO and shake multipliers to a raw score and appends
+// bonus entries to the breakdown so the displayed total always
+// matches the breakdown sum.
+// ═══════════════════════════════════════════════════════════════
+export function finaliseScore(
+  rawScore: number,
+  goCount: number,
+  shakeCount: number,
+  breakdown: ScoreBreakdown[],
+): { finalScore: number; breakdown: ScoreBreakdown[] } {
+  const goScore = applyGoMultiplier(rawScore, goCount)
+  const finalScore = applyShakeMultiplier(goScore, shakeCount)
+  let bd = breakdown
+  if (goCount > 0) {
+    bd = [...bd, { key: 'go_bonus', emoji: '🔥', label: `GO ×${goCount} 보너스`, pts: goScore - rawScore }]
+  }
+  if (shakeCount > 0) {
+    bd = [...bd, { key: 'shake_bonus', emoji: '🫨', label: `흔들기 ×${Math.pow(2, shakeCount)} 보너스`, pts: finalScore - goScore }]
+  }
+  return { finalScore, breakdown: bd }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CARD VALUE (for AI scoring)
 // ═══════════════════════════════════════════════════════════════
 export function cardValue(card: Card | null | undefined): number {
