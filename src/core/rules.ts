@@ -210,7 +210,7 @@ export function applyTurn(
   let oppCaptured = [...(isAI ? state.playerCaptured : state.aiCaptured)]
   let special: string | null = null
   // Flag from chooseMatch: player had 2 field matches for played.month
-  const hadTwoMatches = state._hadTwoMatches || false
+  let hadTwoMatches = state._hadTwoMatches || false
 
   // Hand card
   const handMatches = newField.filter(f => f.month === played.month)
@@ -225,6 +225,7 @@ export function applyTurn(
     const chosen = handMatches[0]
     newField = newField.filter(f => f.id !== chosen.id)
     captured = [...captured, played, chosen]
+    hadTwoMatches = true // needed so draw-phase ttadak check fires for AI
   } else if (handMatches.length === 3) {
     // Sa-ssak (싹쓸이): played card sweeps all 3 remaining field cards of same month
     newField = newField.filter(f => !handMatches.some(m => m.id === f.id))

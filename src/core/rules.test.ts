@@ -250,6 +250,26 @@ describe('applyTurn — AI specific', () => {
     expect(next.aiCaptured).toContainEqual(jan1)
     expect(next.playerCaptured).toHaveLength(0)
   })
+
+  it('AI ttadak: 2 field matches → takes first, draws 4th card → steals junk from player', () => {
+    // AI plays jan4 with 2 field matches (jan2, jan3); takes jan2, jan3 stays on field.
+    // Draw pile has jan1 — 4th Jan card → ttadak: AI captures all 4 and steals player junk.
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const playerJunk = c(7) // Feb junk card held by player
+    const state = makeState({
+      aiHand: [jan4],
+      field: [jan2, jan3],
+      drawPile: [jan1],
+      playerCaptured: [playerJunk],
+    })
+    const next = applyTurn(state, jan4, true, t)
+    expect(next.aiCaptured).toContainEqual(jan1)
+    expect(next.aiCaptured).toContainEqual(jan2)
+    expect(next.aiCaptured).toContainEqual(jan3)
+    expect(next.aiCaptured).toContainEqual(jan4)
+    expect(next.aiCaptured).toContainEqual(playerJunk)
+    expect(next.playerCaptured).not.toContainEqual(playerJunk)
+  })
 })
 
 // ─── Sa-ssak ──────────────────────────────────────────────────────────────────
