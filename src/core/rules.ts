@@ -1,6 +1,6 @@
 import { CardType } from './cards'
 import { GamePhase } from './gameState'
-import { calcScore, applyGoMultiplier } from './scoring'
+import { calcScore, applyGoMultiplier, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
 import { deal } from './deck'
 import type { Card } from './cards'
@@ -220,9 +220,9 @@ export function applyTurn(
     newField = newField.filter(f => f.id !== handMatches[0].id)
     captured = [...captured, played, handMatches[0]]
   } else if (handMatches.length === 2) {
-    // AI always takes first; player goes through CHOOSE_MATCH so this branch
-    // is only reached by AI
-    const chosen = handMatches[0]
+    // AI picks the higher-value match; player goes through CHOOSE_MATCH so this
+    // branch is only reached by AI
+    const chosen = handMatches.reduce((best, m) => cardValue(m) >= cardValue(best) ? m : best)
     newField = newField.filter(f => f.id !== chosen.id)
     captured = [...captured, played, chosen]
     hadTwoMatches = true // needed so draw-phase ttadak check fires for AI

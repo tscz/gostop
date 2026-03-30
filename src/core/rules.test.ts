@@ -251,6 +251,17 @@ describe('applyTurn — AI specific', () => {
     expect(next.playerCaptured).toHaveLength(0)
   })
 
+  it('AI picks higher-value card when 2 field matches exist', () => {
+    // AI plays feb ribbon (c6) with 2 field matches: feb animal (c5, value 25) and feb junk (c7, value 1).
+    // AI should capture c5 (animal) and leave c7 on the field.
+    const feb5 = c(5), feb6 = c(6), feb7 = c(7)
+    const state = makeState({ aiHand: [feb6], field: [feb7, feb5], drawPile: [] })
+    const next = applyTurn(state, feb6, true, t)
+    expect(next.aiCaptured).toContainEqual(feb5)
+    expect(next.field).toContainEqual(feb7)
+    expect(next.field).not.toContainEqual(feb5)
+  })
+
   it('AI ttadak: 2 field matches → takes first, draws 4th card → steals junk from player', () => {
     // AI plays jan4 with 2 field matches (jan2, jan3); takes jan2, jan3 stays on field.
     // Draw pile has jan1 — 4th Jan card → ttadak: AI captures all 4 and steals player junk.
