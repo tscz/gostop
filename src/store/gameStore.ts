@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 import { GamePhase } from '../core/gameState'
-import { initState, applyTurn, applyPoktan } from '../core/rules'
-import { applyGoMultiplier } from '../core/scoring'
+import { initState, applyTurn, applyPoktan, applyShake } from '../core/rules'
+import { applyGoMultiplier, applyShakeMultiplier } from '../core/scoring'
 import { selectAiCard } from '../core/ai'
 import type { GameState } from '../core/gameState'
 import type { Card } from '../core/cards'
@@ -17,6 +17,7 @@ interface GameStore {
   playCard: (card: Card) => void
   chooseMatch: (matchCard: Card) => void
   declarePoktan: () => void
+  declareShake: () => void
   callGo: () => void
   callStop: () => void
   newGame: () => void
@@ -60,6 +61,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const prev = store.state
       if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT || !prev.pendingPoktan) return store
       return { state: applyPoktan(prev, false, getT()) }
+    })
+  },
+
+  declareShake: () => {
+    set(store => {
+      const prev = store.state
+      if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT || !prev.pendingShake) return store
+      return { state: applyShake(prev, getT()) }
     })
   },
 
@@ -110,7 +119,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Guard against double-click: only act when in GOSTOP phase
       if (prev.phase !== GamePhase.GOSTOP) return store
 
-      const finalPlayerScore = applyGoMultiplier(prev.playerScore, prev.goCount)
+      const finalPlayerScore = applyShakeMultiplier(applyGoMultiplier(prev.playerScore, prev.goCount), prev.shakeCount)
       const winner: GameState['winner'] =
         finalPlayerScore > prev.aiScore
           ? 'player'

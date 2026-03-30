@@ -51,6 +51,13 @@ export interface PendingPoktan {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PENDING SHAKE (흔들기)
+// ═══════════════════════════════════════════════════════════════
+export interface PendingShake {
+  handCards: Card[]   // the 3 hand cards of same month (no field card)
+}
+
+// ═══════════════════════════════════════════════════════════════
 // GAME STATE
 // ═══════════════════════════════════════════════════════════════
 export interface GameState {
@@ -71,6 +78,8 @@ export interface GameState {
   goCount: number
   pendingChoose: PendingChoose | null
   pendingPoktan: PendingPoktan | null
+  pendingShake: PendingShake | null
+  shakeCount: number
   message: string
   winner: 'player' | 'ai' | 'draw' | null
   _hadTwoMatches: boolean

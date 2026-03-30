@@ -91,6 +91,14 @@ export function calcScore(captured: Card[]): ScoreResult {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SHAKE MULTIPLIER
+// Doubles the player's final score for each shake declared.
+// ═══════════════════════════════════════════════════════════════
+export function applyShakeMultiplier(score: number, shakeCount: number): number {
+  return shakeCount > 0 ? score * Math.pow(2, shakeCount) : score
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CARD VALUE (for AI scoring)
 // ═══════════════════════════════════════════════════════════════
 export function cardValue(card: Card | null | undefined): number {

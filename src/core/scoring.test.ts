@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcScore, cardValue, applyGoMultiplier } from './scoring'
+import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier } from './scoring'
 import { DECK, CardType } from './cards'
 
 const c = (id: number) => DECK.find(card => card.id === id)!
@@ -61,6 +61,24 @@ describe('applyGoMultiplier', () => {
   })
   it('5 GOs → score × 2 × 3 × 4 = ×24', () => {
     expect(applyGoMultiplier(10, 5)).toBe(240)
+  })
+})
+
+// ─────────────────────────────────────────────
+// applyShakeMultiplier
+// ─────────────────────────────────────────────
+describe('applyShakeMultiplier', () => {
+  it('0 shakes → score unchanged', () => {
+    expect(applyShakeMultiplier(10, 0)).toBe(10)
+  })
+  it('1 shake → score × 2', () => {
+    expect(applyShakeMultiplier(10, 1)).toBe(20)
+  })
+  it('2 shakes → score × 4', () => {
+    expect(applyShakeMultiplier(10, 2)).toBe(40)
+  })
+  it('0 score stays 0 regardless of shakeCount', () => {
+    expect(applyShakeMultiplier(0, 3)).toBe(0)
   })
 })
 

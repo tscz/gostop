@@ -40,5 +40,6 @@
   "timeline": "Moves",
   "noPoints": "No points yet",
   "showDetails": "Show card details",
+  "shakeDesc": "3 same-month cards in hand, no field match — declare to double your final score!",
   "chooseMatch": "Choose which card to capture:"
 }

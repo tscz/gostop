@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyTurn, detectPoktan, applyPoktan } from './rules'
+import { applyTurn, detectPoktan, applyPoktan, detectShake, applyShake } from './rules'
 import { GamePhase } from './gameState'
 import { DECK } from './cards'
 import type { GameState } from './gameState'
@@ -28,6 +28,8 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     goCount: 0,
     pendingChoose: null,
     pendingPoktan: null,
+    pendingShake: null,
+    shakeCount: 0,
     message: '',
     winner: null,
     _hadTwoMatches: false,
@@ -558,5 +560,111 @@ describe('applyPoktan', () => {
     const next = applyPoktan(state, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
     expect(next.winner).not.toBeNull()
+  })
+})
+
+// ─── detectShake ──────────────────────────────────────────────────────────────
+
+describe('detectShake', () => {
+  it('returns null when hand has no 3-of-a-kind', () => {
+    expect(detectShake([c(1), c(5), c(9)], [])).toBeNull()
+  })
+
+  it('returns null when 3-of-a-kind in hand but a field card exists for that month (poktan, not shake)', () => {
+    // Jan: c(1), c(2), c(3) in hand; c(4) on field → poktan territory
+    expect(detectShake([c(1), c(2), c(3)], [c(4)])).toBeNull()
+  })
+
+  it('returns handCards when 3-of-a-kind in hand and no matching field card', () => {
+    const result = detectShake([c(1), c(2), c(3)], [c(9)])
+    expect(result).not.toBeNull()
+    expect(result!.handCards).toHaveLength(3)
+    expect(result!.handCards.every(h => h.month === 1)).toBe(true)
+  })
+
+  it('returns null when only 2 cards of a month in hand', () => {
+    expect(detectShake([c(1), c(2), c(9)], [])).toBeNull()
+  })
+})
+
+// ─── applyShake ───────────────────────────────────────────────────────────────
+
+describe('applyShake', () => {
+  it('increments shakeCount and clears pendingShake', () => {
+    const state = makeState({
+      playerHand: [c(1), c(2), c(3)],
+      pendingShake: { handCards: [c(1), c(2), c(3)] },
+      shakeCount: 0,
+    })
+    const next = applyShake(state, t)
+    expect(next.shakeCount).toBe(1)
+    expect(next.pendingShake).toBeNull()
+  })
+
+  it('stacks: second shake increments to 2', () => {
+    const state = makeState({
+      pendingShake: { handCards: [c(1), c(2), c(3)] },
+      shakeCount: 1,
+    })
+    const next = applyShake(state, t)
+    expect(next.shakeCount).toBe(2)
+  })
+
+  it('player turn and hand are unchanged after shake declaration', () => {
+    const hand = [c(1), c(2), c(3), c(5)]
+    const state = makeState({
+      playerHand: hand,
+      pendingShake: { handCards: [c(1), c(2), c(3)] },
+    })
+    const next = applyShake(state, t)
+    expect(next.playerHand).toEqual(hand)
+    expect(next.turn).toBe('player')
+    expect(next.phase).toBe(GamePhase.SELECT)
+  })
+
+  it('pendingShake is set after AI turn when player holds 3-of-a-kind with no field match', () => {
+    // AI plays a Feb card; player's hand has 3 Jan cards and Jan is off the field.
+    const feb5 = c(5), feb6 = c(6)
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3)
+    const state = makeState({
+      aiHand: [feb5],
+      playerHand: [jan1, jan2, jan3],
+      field: [feb6], // only Feb on field — Jan has no match
+      drawPile: [],
+      turn: 'ai',
+    })
+    const next = applyTurn(state, feb5, true, t)
+    expect(next.pendingShake).not.toBeNull()
+    expect(next.pendingShake!.handCards.every(h => h.month === 1)).toBe(true)
+  })
+
+  it('pendingShake is null after player turn (shake only offered at start of player turn)', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    // Player plays jan4; after turn it is AI's turn → no pendingShake offered
+    const state = makeState({
+      playerHand: [jan4],
+      aiHand: [c(5)],
+      field: [jan1, jan2, jan3], // 3 Jan cards on field → jan4 is sassak
+      drawPile: [],
+    })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.pendingShake).toBeNull()
+  })
+
+  it('shake multiplier doubles player score at game end', () => {
+    // Player holds 3 non-rain brights in captured (samgwang = 3 pts).
+    // With shakeCount=1 the final score should be 3 × 2 = 6.
+    const feb5 = c(5) // Feb animal — played last to trigger game end
+    const state = makeState({
+      playerHand: [feb5],
+      playerCaptured: [c(1), c(9), c(29)], // 3 brights = 3 pts
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      shakeCount: 1,
+    })
+    const next = applyTurn(state, feb5, false, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.playerScore).toBe(6) // 3 × 2^1
   })
 })

@@ -15,7 +15,7 @@ import HelpModal from './HelpModal'
 
 export default function GameBoard() {
   const { t } = useTranslation()
-  const { state: g, playCard, chooseMatch, declarePoktan, callGo, callStop, newGame, playAiTurn } = useGameStore()
+  const { state: g, playCard, chooseMatch, declarePoktan, declareShake, callGo, callStop, newGame, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
@@ -83,6 +83,7 @@ export default function GameBoard() {
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
   const isOver = g.phase === GamePhase.GAME_OVER
   const canPoktan = isPlayer && g.pendingPoktan !== null
+  const canShake = isPlayer && g.pendingShake !== null
   // Covers SELECT, GOSTOP, CHOOSE_MATCH — any phase where player must act
   const isPlayerTurn = g.turn === 'player' && !isOver
 
@@ -308,6 +309,31 @@ export default function GameBoard() {
                   className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all"
                 >
                   💣 Poktan!
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Shake declaration */}
+          {canShake && g.pendingShake && (
+            <div className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-purple-300 font-black text-sm mb-0.5">🫨 흔들기 Shake!</p>
+                  <p className="text-purple-200/60 text-xs">{t('shakeDesc')}</p>
+                </div>
+                <div className="flex gap-1.5 items-center">
+                  {g.pendingShake.handCards.map(c => (
+                    <div key={c.id}>
+                      <CardSVG card={c} size={46} />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={declareShake}
+                  className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all"
+                >
+                  🫨 Shake!
                 </button>
               </div>
             </div>
