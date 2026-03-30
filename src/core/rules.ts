@@ -124,7 +124,7 @@ export function applyPoktan(
   const newField = state.field.filter(f => f.id !== fieldCard.id)
 
   // Steal 1 junk from opponent
-  const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+  const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
   if (junk) {
     oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
     captured = [...captured, junk]
@@ -230,7 +230,7 @@ export function applyTurn(
     newField = newField.filter(f => !handMatches.some(m => m.id === f.id))
     captured = [...captured, played, ...handMatches]
     special = 'sassak'
-    const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+    const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
     if (junk) {
       oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
       captured = [...captured, junk]
@@ -254,7 +254,7 @@ export function applyTurn(
         newField = newField.filter(f => f.id !== drawnMatches[0].id)
         captured = [...captured, drawn, drawnMatches[0]]
         special = 'ttadak'
-        const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+        const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
         if (junk) {
           oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
           captured = [...captured, junk]
@@ -266,7 +266,7 @@ export function applyTurn(
         // Chok: hand card had no match (discarded), drawn matched it
         if (!special && handMatches.length === 0 && drawnMatches[0].id === played.id) {
           special = 'chok'
-          const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+          const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
           if (junk) {
             oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
             captured = [...captured, junk]
@@ -282,7 +282,7 @@ export function applyTurn(
       newField = newField.filter(f => !drawnMatches.some(m => m.id === f.id))
       captured = [...captured, drawn, ...drawnMatches]
       special = 'ttadak'
-      const junk = oppCaptured.find(c => c.type === CardType.JUNK)
+      const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
       if (junk) {
         oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
         captured = [...captured, junk]

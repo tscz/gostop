@@ -292,6 +292,86 @@ describe('applyTurn — sa-ssak', () => {
   })
 })
 
+// ─── Issue #7: DOUBLE_JUNK eligible for stealing ─────────────────────────────
+// All five steal operations must fall back to a DOUBLE_JUNK card when the
+// opponent's pile contains no plain JUNK cards.
+
+describe('junk-stealing accepts DOUBLE_JUNK when no plain JUNK exists (issue #7)', () => {
+  const doubleJunk = c(44) // November DOUBLE_JUNK
+
+  it('sa-ssak steals DOUBLE_JUNK when opponent has no plain junk', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan4],
+      field: [jan1, jan2, jan3],
+      drawPile: [],
+      aiCaptured: [doubleJunk],
+    })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.playerCaptured).toContainEqual(doubleJunk)
+    expect(next.aiCaptured).not.toContainEqual(doubleJunk)
+  })
+
+  it('ttadak (draw hits 3 field cards) steals DOUBLE_JUNK when opponent has no plain junk', () => {
+    const feb5 = c(5) // played — no field match
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [feb5],
+      field: [jan1, jan2, jan3],
+      drawPile: [jan4],
+      aiCaptured: [doubleJunk],
+    })
+    const next = applyTurn(state, feb5, false, t)
+    expect(next.playerCaptured).toContainEqual(doubleJunk)
+    expect(next.aiCaptured).not.toContainEqual(doubleJunk)
+  })
+
+  it('ttadak (hadTwoMatches) steals DOUBLE_JUNK when opponent has no plain junk', () => {
+    // Player played jan4 with 2 field matches (jan2, jan3); jan2 was chosen.
+    // jan3 stays on field. Draw pile has jan1 — 4th Jan → ttadak.
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan4],
+      field: [jan2, jan3],
+      drawPile: [jan1],
+      aiCaptured: [doubleJunk],
+      _hadTwoMatches: true,
+    })
+    const next = applyTurn(state, jan4, false, t)
+    expect(next.playerCaptured).toContainEqual(doubleJunk)
+    expect(next.aiCaptured).not.toContainEqual(doubleJunk)
+  })
+
+  it('chok steals DOUBLE_JUNK when opponent has no plain junk', () => {
+    // Chok: hand card has no field match (goes to field), drawn card matches it.
+    const feb5 = c(5), feb6 = c(6) // Feb cards — feb5 played, feb6 drawn
+    const state = makeState({
+      playerHand: [feb5],
+      field: [],
+      drawPile: [feb6],
+      aiCaptured: [doubleJunk],
+    })
+    const next = applyTurn(state, feb5, false, t)
+    expect(next.playerCaptured).toContainEqual(doubleJunk)
+    expect(next.aiCaptured).not.toContainEqual(doubleJunk)
+  })
+
+  it('poktan steals DOUBLE_JUNK when opponent has no plain junk', () => {
+    const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
+    const state = makeState({
+      playerHand: [jan1, jan2, jan3],
+      aiHand: [c(21)],
+      field: [jan4],
+      drawPile: [],
+      aiCaptured: [doubleJunk],
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+    })
+    const next = applyPoktan(state, false, t)
+    expect(next.playerCaptured).toContainEqual(doubleJunk)
+    expect(next.aiCaptured).not.toContainEqual(doubleJunk)
+  })
+})
+
 // ─── detectPoktan ─────────────────────────────────────────────────────────────
 
 describe('detectPoktan', () => {
