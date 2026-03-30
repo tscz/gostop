@@ -46,7 +46,7 @@ Pushing a GitHub Release triggers the `deploy-release.yml` workflow which builds
 
 ---
 
-## Card attribution
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Hwatu card artwork by **Marcus Richert**, based on Louie Mantia Jr.'s Hanafuda graphics.
 Licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
