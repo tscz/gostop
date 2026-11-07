@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyTurn, detectPoktan, applyPoktan, detectShake, applyShake } from './rules'
+import { applyTurn, detectPoktan, applyPoktan, detectShake, applyShake, applySkipTurn } from './rules'
 import { GamePhase } from './gameState'
 import { DECK } from './cards'
 import type { GameState } from './gameState'
@@ -746,5 +746,224 @@ describe('applyShake', () => {
     expect(next.playerBreakdown.find(b => b.key === 'shake_bonus')).toBeDefined()
     const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
     expect(total).toBe(8)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
+// QA TEST PLAN — loser penalties, nagari, poktan skip, session
+// ═══════════════════════════════════════════════════════════════
+
+// 6 safe pi cards (no brights) for the winning side so no penalties fire on them
+const safeLoser = [c(3), c(4), c(7), c(8), c(11), c(12), c(41)] // 6pi + Nov bright
+
+// AI wins with samgwang (Jan+Mar+Aug brights = 3pts) helper
+// Player score (loser) = 2pts (playerScore=1 + go bonus=1), AI = 3pts → AI wins
+const aiSamgwang = [c(1), c(9), c(29)] // Jan + Mar + Aug Bright = 삼광 = 3pts
+const loserPiOnly = [c(3), c(4), c(7), c(8), c(11), c(12)] // 6 pi, no brights
+
+// AI plays a Jan Ribbon to empty field (no match, goes to field, no score change)
+// Player has no hand cards → game ends naturally when AI finishes turn
+function makeAiLastTurnState(overrides: Partial<GameState> = {}) {
+  return makeState({
+    turn: 'ai' as const,
+    playerHand: [],         // triggers gameOver via nextPlayerHand.length===0
+    aiHand: [c(2)],         // Jan Ribbon — played last
+    field: [c(5)],          // Feb Animal — no month match for Jan Ribbon
+    drawPile: [],
+    goCount: 1,             // non-zero → not nagari; also triggers go bak if player is loser
+    playerScore: 1,         // isAI=true so rawPlayerPts=state.playerScore; finalise(1,1)=2
+    aiCaptured: aiSamgwang, // calcScore(aiSamgwang)=3pts → AI wins (3 > 2)
+    ...overrides,
+  })
+}
+
+describe('QA: 고박 (go bak) — loser called GO', () => {
+  it('winner score doubles when loser (player) had called GO', () => {
+    const state = makeAiLastTurnState({
+      playerCaptured: safeLoser, // 6pi + bright → only go bak fires (no gwang/pi bak)
+    })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).toBe('ai')
+    expect(next.aiBreakdown.find(b => b.key === 'gobak')).toBeDefined()
+  })
+
+  it('no go bak when goCount is 0 (nagari)', () => {
+    const state = makeAiLastTurnState({ goCount: 0 })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.isNagari).toBe(true)
+    expect(next.aiBreakdown.find(b => b.key === 'gobak')).toBeUndefined()
+  })
+})
+
+describe('QA: 광박 (gwang bak) — loser has no brights', () => {
+  it('winner score doubles when winner has brights, loser has none', () => {
+    // AI (winner) has samgwang; player (loser) has 6 pi but zero brights
+    const state = makeAiLastTurnState({ playerCaptured: loserPiOnly })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).toBe('ai')
+    expect(next.aiBreakdown.find(b => b.key === 'gwangbak')).toBeDefined()
+  })
+
+  it('no gwang bak when loser holds a bright', () => {
+    // Player (loser) has safeLoser which includes Nov Rain Bright
+    const state = makeAiLastTurnState({ playerCaptured: safeLoser })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.aiBreakdown.find(b => b.key === 'gwangbak')).toBeUndefined()
+  })
+})
+
+describe('QA: 피박 (pi bak) — loser has fewer than 6 pi', () => {
+  it('winner score doubles when loser pi count < 6', () => {
+    // Player (loser) has only 3 pi cards → pi bak fires
+    const state = makeAiLastTurnState({
+      playerCaptured: [c(3), c(4), c(7)], // 3 pi, no brights (gwang bak also fires, that's ok)
+    })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).toBe('ai')
+    expect(next.aiBreakdown.find(b => b.key === 'pibak')).toBeDefined()
+  })
+
+  it('no pi bak when loser has exactly 6 pi', () => {
+    const state = makeAiLastTurnState({ playerCaptured: safeLoser })
+    const next = applyTurn(state, c(2), true, t)
+    expect(next.aiBreakdown.find(b => b.key === 'pibak')).toBeUndefined()
+  })
+})
+
+describe('QA: post-poktan skip (#8)', () => {
+  it('applyPoktan sets poktanSkipsRemaining=2 for player poktan', () => {
+    // Build a state where player has 3 January cards + field has 1
+    const [h1, h2, h3, f1] = [c(1), c(2), c(3), c(4)]
+    // Override months so they all share month 1
+    const makeJan = (id: number) => ({ ...DECK.find(x => x.id === id)!, month: 1 })
+    const jan1 = makeJan(1), jan2 = makeJan(2), jan3 = makeJan(3), jan4 = makeJan(4)
+    const state = makeState({
+      playerHand: [jan1, jan2, jan3],
+      aiHand: [c(5)],
+      field: [jan4],
+      drawPile: [],
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+    })
+    const next = applyPoktan(state, false, t)
+    expect(next.poktanSkipsRemaining).toBe(2)
+    expect(next.turn).toBe('ai')
+  })
+
+  it('applyPoktan does NOT set skip for AI poktan', () => {
+    const makeJan = (id: number) => ({ ...DECK.find(x => x.id === id)!, month: 1 })
+    const jan1 = makeJan(1), jan2 = makeJan(2), jan3 = makeJan(3), jan4 = makeJan(4)
+    const state = makeState({
+      turn: 'ai' as const,
+      aiHand: [jan1, jan2, jan3],
+      playerHand: [c(5)],
+      field: [jan4],
+      drawPile: [],
+      pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
+      poktanSkipsRemaining: 0,
+    })
+    const next = applyPoktan(state, true, t)
+    expect(next.poktanSkipsRemaining).toBe(0)
+  })
+
+  it('applyTurn decrements poktanSkipsRemaining on player turn', () => {
+    const jan1 = c(1), mar9 = c(9)
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [mar9],
+      field: [],
+      drawPile: [],
+      poktanSkipsRemaining: 2,
+    })
+    const next = applyTurn(state, jan1, false, t)
+    expect(next.poktanSkipsRemaining).toBe(1)
+  })
+
+  it('applyTurn does NOT decrement on AI turn', () => {
+    const jan1 = c(1), mar9 = c(9)
+    const state = makeState({
+      playerHand: [mar9],
+      aiHand: [jan1],
+      field: [],
+      drawPile: [],
+      poktanSkipsRemaining: 2,
+      turn: 'ai' as const,
+    })
+    const next = applyTurn(state, jan1, true, t)
+    expect(next.poktanSkipsRemaining).toBe(2)
+  })
+
+  it('applySkipTurn draws from pile without consuming hand card and decrements skip', () => {
+    const jan1 = c(1), feb5 = c(5)
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [feb5],
+      field: [],
+      drawPile: [c(9)], // Mar Bright goes to field (no match)
+      poktanSkipsRemaining: 1,
+    })
+    const next = applySkipTurn(state, t)
+    expect(next.playerHand).toContainEqual(jan1) // hand card NOT played
+    expect(next.poktanSkipsRemaining).toBe(0)
+    expect(next.turn).toBe('ai')
+    expect(next.field).toContainEqual(c(9)) // drawn card went to field
+  })
+})
+
+describe('QA: nagari (#9)', () => {
+  it('natural end with goCount=0 produces nagari (no winner)', () => {
+    const jan1 = c(1)
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      goCount: 0,
+    })
+    const next = applyTurn(state, jan1, false, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).toBeNull()
+    expect(next.isNagari).toBe(true)
+  })
+
+  it('natural end with goCount>0 is NOT nagari', () => {
+    const jan1 = c(1)
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      goCount: 1,
+      playerScore: 10,
+      aiScore: 0,
+      aiCaptured: safeLoser,
+    })
+    const next = applyTurn(state, jan1, false, t)
+    expect(next.isNagari).toBe(false)
+    expect(next.winner).not.toBeNull()
+  })
+
+  it('nagariMultiplier is applied to winner score when >1', () => {
+    const jan1 = c(1)
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      goCount: 1,
+      playerScore: 4,
+      aiScore: 0,
+      aiCaptured: safeLoser,
+      nagariMultiplier: 2, // previous game was nagari
+    })
+    const next = applyTurn(state, jan1, false, t)
+    expect(next.winner).toBe('player')
+    // Score should be doubled by nagari multiplier
+    expect(next.playerBreakdown.find(b => b.key === 'nagari_bonus')).toBeDefined()
+    // Breakdown sum should equal total
+    const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
+    expect(total).toBe(next.playerScore)
   })
 })
