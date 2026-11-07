@@ -318,7 +318,7 @@ describe('applyTurn — sa-ssak', () => {
     const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
     const state = makeState({ playerHand: [jan4], field: [jan1, jan2, jan3], drawPile: [] })
     const next = applyTurn(state, jan4, false, t)
-    expect(next.lastExp?.lines.some(l => l.includes('sassak') || l.includes('Sa-ssak'))).toBe(true)
+    expect(next.lastExp?.lines.some(l => l.toLowerCase().includes('sassak'))).toBe(true)
   })
 
   it('no pi steal when opponent has no junk', () => {
