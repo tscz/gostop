@@ -432,7 +432,7 @@ export function applyTurn(
   const prevBD = isAI ? state.aiBreakdown : state.playerBreakdown
   const { points: newPts, breakdown } = calcScore(captured)
 
-  const expBase = buildExplanation({
+  const exp: MoveExplanation = buildExplanation({
     played,
     handMatches,
     drawn,
@@ -442,9 +442,9 @@ export function applyTurn(
     breakdown,
     prevBreakdown: prevBD,
     special,
+    who: isAI ? 'ai' : 'player',
     t,
   })
-  const exp: MoveExplanation = { ...expBase, who: isAI ? 'ai' : 'player' }
 
   // Game over check: both hands + pile empty, OR next player has no cards to play
   // (poktan skips let the human player draw without a hand card)
