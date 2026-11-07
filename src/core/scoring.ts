@@ -147,9 +147,11 @@ export function applyLoserPenalties(
     bd = [...bd, { key: 'gobak', emoji: '🔄', label: '고박 Loser called GO ×2', pts: score - prev }]
   }
 
-  const winnerBrights = winnerCaptured.filter(c => c.type === CardType.BRIGHT)
   const loserBrights = loserCaptured.filter(c => c.type === CardType.BRIGHT)
-  if (winnerBrights.length > 0 && loserBrights.length === 0) {
+  const winnerHasBrightScore = winnerBreakdown.some(b =>
+    ['ogwang', 'sagwang', 'samgwang', 'bisamgwang'].includes(b.key)
+  )
+  if (winnerHasBrightScore && loserBrights.length === 0) {
     const prev = score
     score *= 2
     bd = [...bd, { key: 'gwangbak', emoji: '🌟', label: '광박 Loser has no Brights ×2', pts: score - prev }]
@@ -160,7 +162,8 @@ export function applyLoserPenalties(
     if (c.type === CardType.JUNK) return s + 1
     return s
   }, 0)
-  if (loserPiCount < 6) {
+  const winnerHasPiScore = winnerBreakdown.some(b => b.key === 'pi')
+  if (winnerHasPiScore && loserPiCount < 6) {
     const prev = score
     score *= 2
     bd = [...bd, { key: 'pibak', emoji: '🃏', label: '피박 Loser has fewer than 6 pi ×2', pts: score - prev }]

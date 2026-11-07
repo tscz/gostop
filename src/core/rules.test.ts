@@ -565,6 +565,7 @@ describe('applyPoktan', () => {
       aiHand: [],
       field: [jan4],
       drawPile: [],
+      goCount: 1, // ensures someone wins (prevents 0-0 nagari)
       pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
     })
     const next = applyPoktan(state, false, t)
@@ -580,6 +581,7 @@ describe('applyPoktan', () => {
       aiHand: [],
       field: [jan4],
       drawPile: [c(9)], // pile not empty, but AI still can't play from hand
+      goCount: 1, // ensures someone wins (prevents 0-0 nagari)
       pendingPoktan: { handCards: [jan1, jan2, jan3], fieldCard: jan4 },
     })
     const next = applyPoktan(state, false, t)
@@ -815,10 +817,15 @@ describe('QA: 광박 (gwang bak) — loser has no brights', () => {
 })
 
 describe('QA: 피박 (pi bak) — loser has fewer than 6 pi', () => {
-  it('winner score doubles when loser pi count < 6', () => {
-    // Player (loser) has only 3 pi cards → pi bak fires
+  // pi bak requires the WINNER to have scored from pi (10+ pi junk)
+  // 12 junk cards = 3 pi points; with goCount=1 player finalises to 2pts → AI wins
+  const aiPiWinner = [c(3), c(4), c(7), c(8), c(11), c(12), c(15), c(16), c(19), c(20), c(23), c(24)]
+
+  it('winner score doubles when winner has pi scoring and loser pi count < 6', () => {
+    // AI (winner) has 12 pi junk = 3pts; player (loser) has 3 pi → pi bak fires
     const state = makeAiLastTurnState({
-      playerCaptured: [c(3), c(4), c(7)], // 3 pi, no brights (gwang bak also fires, that's ok)
+      aiCaptured: aiPiWinner,
+      playerCaptured: [c(25), c(26), c(27)], // 3 pi, no brights
     })
     const next = applyTurn(state, c(2), true, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
@@ -826,7 +833,8 @@ describe('QA: 피박 (pi bak) — loser has fewer than 6 pi', () => {
     expect(next.aiBreakdown.find(b => b.key === 'pibak')).toBeDefined()
   })
 
-  it('no pi bak when loser has exactly 6 pi', () => {
+  it('no pi bak when winner has no pi scoring (brights only)', () => {
+    // AI wins with samgwang (brights, no pi key) → pi bak does not fire
     const state = makeAiLastTurnState({ playerCaptured: safeLoser })
     const next = applyTurn(state, c(2), true, t)
     expect(next.aiBreakdown.find(b => b.key === 'pibak')).toBeUndefined()

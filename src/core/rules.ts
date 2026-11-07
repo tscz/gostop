@@ -4,9 +4,51 @@ import { calcScore, finaliseScore, applyLoserPenalties, applyNagariMultiplier, c
 import { buildExplanation } from './moveExplainer'
 import { deal } from './deck'
 import type { Card } from './cards'
-import type { GameState, MoveExplanation, PendingPoktan, PendingShake } from './gameState'
+import type { GameState, MoveExplanation, PendingPoktan, PendingShake, ScoreBreakdown } from './gameState'
 
 const GOSTOP_THRESHOLD = 7
+
+// ═══════════════════════════════════════════════════════════════
+// RESOLVE GAME END — shared helper used by all five natural/stop paths
+// Applies loser penalties, nagari multiplier, and the nagari threshold
+// check (natural ends only: no winner when neither side reached 7 pts
+// and no GO was called).
+// ═══════════════════════════════════════════════════════════════
+interface GameEndResult {
+  winner: GameState['winner']
+  finalPlayerPts: number
+  finalPlayerBD: ScoreBreakdown[]
+  finalAiPts: number
+  finalAiBD: ScoreBreakdown[]
+  isNagari: boolean
+}
+
+export function resolveGameEnd(
+  baseFinalPlayerPts: number,
+  baseFinalPlayerBD: ScoreBreakdown[],
+  baseAiPts: number,
+  baseAiBD: ScoreBreakdown[],
+  playerCaptured: Card[],
+  aiCaptured: Card[],
+  goCount: number,
+  nagariMultiplier: number,
+  isNaturalEnd: boolean,
+): GameEndResult {
+  if (isNaturalEnd && goCount === 0 && baseFinalPlayerPts < GOSTOP_THRESHOLD && baseAiPts < GOSTOP_THRESHOLD) {
+    return { winner: null, isNagari: true, finalPlayerPts: baseFinalPlayerPts, finalPlayerBD: baseFinalPlayerBD, finalAiPts: baseAiPts, finalAiBD: baseAiBD }
+  }
+  if (baseFinalPlayerPts > baseAiPts) {
+    let { finalScore: fp, breakdown: fb } = applyLoserPenalties(baseFinalPlayerPts, baseFinalPlayerBD, playerCaptured, aiCaptured, 0)
+    ;({ finalScore: fp, breakdown: fb } = applyNagariMultiplier(fp, fb, nagariMultiplier))
+    return { winner: 'player', isNagari: false, finalPlayerPts: fp, finalPlayerBD: fb, finalAiPts: baseAiPts, finalAiBD: baseAiBD }
+  } else if (baseAiPts > baseFinalPlayerPts) {
+    let { finalScore: fa, breakdown: fad } = applyLoserPenalties(baseAiPts, baseAiBD, aiCaptured, playerCaptured, goCount)
+    ;({ finalScore: fa, breakdown: fad } = applyNagariMultiplier(fa, fad, nagariMultiplier))
+    return { winner: 'ai', isNagari: false, finalPlayerPts: baseFinalPlayerPts, finalPlayerBD: baseFinalPlayerBD, finalAiPts: fa, finalAiBD: fad }
+  } else {
+    return { winner: 'draw', isNagari: false, finalPlayerPts: baseFinalPlayerPts, finalPlayerBD: baseFinalPlayerBD, finalAiPts: baseAiPts, finalAiBD: baseAiBD }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // DETECT POKTAN
@@ -88,8 +130,15 @@ export function initState(opts: InitOpts = {}): GameState {
   const { playerHand, aiHand, field, drawPile, instantWin } = deal()
   const nagariMultiplier = opts.nagariMultiplier ?? 1
 
-  // Rule: player with 4 of same month in hand wins immediately (5pts)
+  // Rule: player with 4 of same month in hand wins immediately (5pts, scaled by nagariMultiplier)
   if (instantWin) {
+    const bomb = { key: 'bomb', emoji: '💣', label: '네 장 폭탄! Instant Win', pts: 5 }
+    const { finalScore: playerScore, breakdown: playerBreakdown } = instantWin === 'player'
+      ? applyNagariMultiplier(5, [bomb], nagariMultiplier)
+      : { finalScore: 0, breakdown: [] as ScoreBreakdown[] }
+    const { finalScore: aiScore, breakdown: aiBreakdown } = instantWin === 'ai'
+      ? applyNagariMultiplier(5, [bomb], nagariMultiplier)
+      : { finalScore: 0, breakdown: [] as ScoreBreakdown[] }
     return {
       playerHand,
       aiHand,
@@ -97,16 +146,10 @@ export function initState(opts: InitOpts = {}): GameState {
       drawPile,
       playerCaptured: [],
       aiCaptured: [],
-      playerScore: instantWin === 'player' ? 5 : 0,
-      aiScore: instantWin === 'ai' ? 5 : 0,
-      playerBreakdown:
-        instantWin === 'player'
-          ? [{ key: 'bomb', emoji: '💣', label: '네 장 폭탄! Instant Win', pts: 5 }]
-          : [],
-      aiBreakdown:
-        instantWin === 'ai'
-          ? [{ key: 'bomb', emoji: '💣', label: '네 장 폭탄! Instant Win', pts: 5 }]
-          : [],
+      playerScore,
+      aiScore,
+      playerBreakdown,
+      aiBreakdown,
       turn: instantWin === 'ai' ? 'ai' : 'player',
       phase: GamePhase.GAME_OVER,
       lastExp: null,
@@ -216,11 +259,13 @@ export function applyPoktan(
     who: isAI ? 'ai' : 'player',
   }
 
-  // Game over check: both hands + pile empty, OR the next player has no cards to play
+  // Game over check: both hands + pile empty, OR next player has no cards to play
+  // (poktan skips let the human player draw without a hand card)
   const nextPlayerHand = isAI ? newPH : newAH
+  const nextPlayerSkips = isAI ? state.poktanSkipsRemaining : 0
   const gameOver =
     (newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0) ||
-    nextPlayerHand.length === 0
+    (nextPlayerHand.length === 0 && (nextPlayerSkips === 0 || state.drawPile.length === 0))
   const rawPlayerPts = isAI ? state.playerScore : newPts
   const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
   const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
@@ -228,39 +273,27 @@ export function applyPoktan(
     : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
   const baseAiPts = isAI ? newPts : state.aiScore
   const baseAiBD = isAI ? breakdown : state.aiBreakdown
+  let phase: GameState['phase'] = GamePhase.SELECT
+  let winner: GameState['winner'] = null
+  let isNagariGame = false
   let finalPlayerPts = baseFinalPlayerPts
   let finalPlayerBD = baseFinalPlayerBD
   let finalAiPts = baseAiPts
   let finalAiBD = baseAiBD
-  let phase: GameState['phase'] = GamePhase.SELECT
-  let winner: GameState['winner'] = null
   if (gameOver) {
     phase = GamePhase.GAME_OVER
-    if (baseFinalPlayerPts > baseAiPts) {
-      winner = 'player'
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyLoserPenalties(
-        baseFinalPlayerPts, baseFinalPlayerBD,
-        isAI ? state.playerCaptured : captured,
-        isAI ? captured : state.aiCaptured,
-        0, // AI never calls GO
-      ))
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyNagariMultiplier(
-        finalPlayerPts, finalPlayerBD, state.nagariMultiplier,
-      ))
-    } else if (baseAiPts > baseFinalPlayerPts) {
-      winner = 'ai'
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyLoserPenalties(
-        baseAiPts, baseAiBD,
-        isAI ? captured : state.aiCaptured,
-        isAI ? state.playerCaptured : captured,
-        state.goCount,
-      ))
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyNagariMultiplier(
-        finalAiPts, finalAiBD, state.nagariMultiplier,
-      ))
-    } else {
-      winner = 'draw'
-    }
+    const ge = resolveGameEnd(
+      baseFinalPlayerPts, baseFinalPlayerBD, baseAiPts, baseAiBD,
+      isAI ? oppCaptured : captured,
+      isAI ? captured : oppCaptured,
+      state.goCount, state.nagariMultiplier, true,
+    )
+    winner = ge.winner
+    isNagariGame = ge.isNagari
+    finalPlayerPts = ge.finalPlayerPts
+    finalPlayerBD = ge.finalPlayerBD
+    finalAiPts = ge.finalAiPts
+    finalAiBD = ge.finalAiBD
   }
 
   // Detect Poktan + Shake for the next player (only if game isn't over)
@@ -281,7 +314,7 @@ export function applyPoktan(
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
     turn: isAI ? 'player' : 'ai',
-    poktanSkipsRemaining: !isAI ? 2 : state.poktanSkipsRemaining,
+    poktanSkipsRemaining: !isAI ? state.poktanSkipsRemaining + 2 : state.poktanSkipsRemaining,
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -289,6 +322,7 @@ export function applyPoktan(
     pendingPoktan,
     pendingShake,
     winner,
+    isNagari: isNagariGame,
     message: '',
   }
 }
@@ -412,11 +446,13 @@ export function applyTurn(
   })
   const exp: MoveExplanation = { ...expBase, who: isAI ? 'ai' : 'player' }
 
-  // Game over check: both hands + pile empty, OR the next player has no cards to play
+  // Game over check: both hands + pile empty, OR next player has no cards to play
+  // (poktan skips let the human player draw without a hand card)
   const nextPlayerHand = isAI ? newPH : newAH
+  const nextPlayerSkips = isAI ? state.poktanSkipsRemaining : 0
   const gameOver =
     (newPH.length === 0 && newAH.length === 0 && newDraw.length === 0) ||
-    nextPlayerHand.length === 0
+    (nextPlayerHand.length === 0 && (nextPlayerSkips === 0 || newDraw.length === 0))
   // R9: after calling GO, player must gain ≥1 point before calling GO/STOP again
   const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
   const canCall = !isAI && newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo
@@ -437,35 +473,18 @@ export function applyTurn(
   let isNagariGame = false
   if (gameOver) {
     phase = GamePhase.GAME_OVER
-    // Nagari: natural end with no GO calls — next game pays double, no winner this game
-    if (state.goCount === 0) {
-      isNagariGame = true
-      winner = null
-    } else if (baseFinalPlayerPts > baseAiPts) {
-      winner = 'player'
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyLoserPenalties(
-        baseFinalPlayerPts, baseFinalPlayerBD,
-        isAI ? state.playerCaptured : captured,
-        isAI ? captured : state.aiCaptured,
-        0, // AI never calls GO
-      ))
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyNagariMultiplier(
-        finalPlayerPts, finalPlayerBD, state.nagariMultiplier,
-      ))
-    } else if (baseAiPts > baseFinalPlayerPts) {
-      winner = 'ai'
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyLoserPenalties(
-        baseAiPts, baseAiBD,
-        isAI ? captured : state.aiCaptured,
-        isAI ? state.playerCaptured : captured,
-        state.goCount,
-      ))
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyNagariMultiplier(
-        finalAiPts, finalAiBD, state.nagariMultiplier,
-      ))
-    } else {
-      winner = 'draw'
-    }
+    const ge = resolveGameEnd(
+      baseFinalPlayerPts, baseFinalPlayerBD, baseAiPts, baseAiBD,
+      isAI ? oppCaptured : captured,
+      isAI ? captured : oppCaptured,
+      state.goCount, state.nagariMultiplier, true,
+    )
+    winner = ge.winner
+    isNagariGame = ge.isNagari
+    finalPlayerPts = ge.finalPlayerPts
+    finalPlayerBD = ge.finalPlayerBD
+    finalAiPts = ge.finalAiPts
+    finalAiBD = ge.finalAiBD
   }
 
   // Detect Poktan + Shake for the next player (only if game isn't over)
@@ -581,37 +600,24 @@ export function applySkipTurn(
     const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = finaliseScore(
       newPts, state.goCount, state.shakeCount, breakdown,
     )
-    if (state.goCount === 0) {
-      isNagariGame = true
-      winner = null
-      finalPlayerPts = baseFinalPlayerPts
-      finalPlayerBD = baseFinalPlayerBD
-    } else if (baseFinalPlayerPts > finalAiPts) {
-      winner = 'player'
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyLoserPenalties(
-        baseFinalPlayerPts, baseFinalPlayerBD, captured, state.aiCaptured, 0,
-      ))
-      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyNagariMultiplier(
-        finalPlayerPts, finalPlayerBD, state.nagariMultiplier,
-      ))
-    } else if (finalAiPts > baseFinalPlayerPts) {
-      winner = 'ai'
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyLoserPenalties(
-        finalAiPts, finalAiBD, state.aiCaptured, captured, state.goCount,
-      ))
-      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyNagariMultiplier(
-        finalAiPts, finalAiBD, state.nagariMultiplier,
-      ))
-    } else {
-      winner = 'draw'
-    }
+    const ge = resolveGameEnd(
+      baseFinalPlayerPts, baseFinalPlayerBD, state.aiScore, state.aiBreakdown,
+      captured, oppCaptured,
+      state.goCount, state.nagariMultiplier, true,
+    )
+    winner = ge.winner
+    isNagariGame = ge.isNagari
+    finalPlayerPts = ge.finalPlayerPts
+    finalPlayerBD = ge.finalPlayerBD
+    finalAiPts = ge.finalAiPts
+    finalAiBD = ge.finalAiBD
   }
 
   const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
   const canCall = newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo
   if (!gameOver && canCall) phase = GamePhase.GOSTOP
 
-  const pendingPoktan = !gameOver ? detectPoktan(state.playerHand, newField) : null
+  const pendingPoktan = !gameOver ? detectPoktan(state.aiHand, newField) : null
   const pendingShake: GameState['pendingShake'] = []
 
   return {

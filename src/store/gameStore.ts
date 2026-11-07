@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 import { GamePhase } from '../core/gameState'
-import { initState, applyTurn, applyPoktan, applyShake, applySkipTurn } from '../core/rules'
-import { finaliseScore, applyLoserPenalties, applyNagariMultiplier } from '../core/scoring'
+import { initState, applyTurn, applyPoktan, applyShake, applySkipTurn, resolveGameEnd } from '../core/rules'
+import { finaliseScore } from '../core/scoring'
 import { selectAiCard } from '../core/ai'
 import type { GameState, PendingShake, SessionState, RoundResult } from '../core/gameState'
 import type { Card } from '../core/cards'
@@ -149,55 +149,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (prev.phase !== GamePhase.GOSTOP) return store
 
       const { score: basePlayerScore, breakdown: baseBreakdown } = finalisePlayerScore(prev)
-      let finalPlayerScore = basePlayerScore
-      let finalBreakdown = baseBreakdown
-      let finalAiScore = prev.aiScore
-      let finalAiBreakdown = prev.aiBreakdown
-      let winner: GameState['winner']
-
-      if (basePlayerScore > prev.aiScore) {
-        winner = 'player'
-        ;({ finalScore: finalPlayerScore, breakdown: finalBreakdown } = applyLoserPenalties(
-          basePlayerScore, baseBreakdown,
-          prev.playerCaptured,
-          prev.aiCaptured,
-          0, // AI never calls GO
-        ))
-        ;({ finalScore: finalPlayerScore, breakdown: finalBreakdown } = applyNagariMultiplier(
-          finalPlayerScore, finalBreakdown, prev.nagariMultiplier,
-        ))
-      } else if (prev.aiScore > basePlayerScore) {
-        winner = 'ai'
-        ;({ finalScore: finalAiScore, breakdown: finalAiBreakdown } = applyLoserPenalties(
-          prev.aiScore, prev.aiBreakdown,
-          prev.aiCaptured,
-          prev.playerCaptured,
-          prev.goCount,
-        ))
-        ;({ finalScore: finalAiScore, breakdown: finalAiBreakdown } = applyNagariMultiplier(
-          finalAiScore, finalAiBreakdown, prev.nagariMultiplier,
-        ))
-      } else {
-        winner = 'draw'
-      }
+      const ge = resolveGameEnd(
+        basePlayerScore, baseBreakdown,
+        prev.aiScore, prev.aiBreakdown,
+        prev.playerCaptured, prev.aiCaptured,
+        prev.goCount, prev.nagariMultiplier, false,
+      )
 
       return {
         state: {
           ...prev,
-          playerScore: finalPlayerScore,
-          playerBreakdown: finalBreakdown,
-          aiScore: finalAiScore,
-          aiBreakdown: finalAiBreakdown,
+          playerScore: ge.finalPlayerPts,
+          playerBreakdown: ge.finalPlayerBD,
+          aiScore: ge.finalAiPts,
+          aiBreakdown: ge.finalAiBD,
           phase: GamePhase.GAME_OVER,
           pendingShake: [],
-          winner,
+          winner: ge.winner,
           message:
             prev.goCount > 0 && prev.shakeCount > 0
-              ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+              ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
               : prev.goCount > 0
-                ? `STOP! GO×${prev.goCount} → ${finalPlayerScore}P`
+                ? `STOP! GO×${prev.goCount} → ${ge.finalPlayerPts}P`
                 : prev.shakeCount > 0
-                  ? `STOP! 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+                  ? `STOP! 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
                   : 'STOP!',
         },
       }
@@ -216,6 +191,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set(store => {
       const s = store.state
       const session = store.session
+      if (s.phase !== GamePhase.GAME_OVER) {
+        return { state: initState({ nagariMultiplier: session.nagariMultiplier }), session }
+      }
       const newNagariMultiplier = s.isNagari ? s.nagariMultiplier * 2 : 1
       const roundResult: RoundResult = {
         round: session.round,
@@ -245,24 +223,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (prev.turn !== 'ai' || prev.phase !== GamePhase.SELECT) return store
 
       function aiStop(s: GameState): GameState {
-        const { score: effectivePlayerScore, breakdown: effectivePlayerBD } = finalisePlayerScore(s)
-        let { finalScore: finalAiScore, breakdown: finalAiBD } = applyLoserPenalties(
+        const { score: basePlayerScore, breakdown: basePlayerBD } = finalisePlayerScore(s)
+        const ge = resolveGameEnd(
+          basePlayerScore, basePlayerBD,
           s.aiScore, s.aiBreakdown,
-          s.aiCaptured,
-          s.playerCaptured,
-          s.goCount,
+          s.playerCaptured, s.aiCaptured,
+          s.goCount, s.nagariMultiplier, false,
         )
-        ;({ finalScore: finalAiScore, breakdown: finalAiBD } = applyNagariMultiplier(
-          finalAiScore, finalAiBD, s.nagariMultiplier,
-        ))
         return {
           ...s,
           phase: GamePhase.GAME_OVER,
-          winner: 'ai' as const,
-          aiScore: finalAiScore,
-          aiBreakdown: finalAiBD,
-          playerScore: effectivePlayerScore,
-          playerBreakdown: effectivePlayerBD,
+          winner: ge.winner,
+          aiScore: ge.finalAiPts,
+          aiBreakdown: ge.finalAiBD,
+          playerScore: ge.finalPlayerPts,
+          playerBreakdown: ge.finalPlayerBD,
           pendingShake: [],
           message: 'AI: STOP!',
         }
