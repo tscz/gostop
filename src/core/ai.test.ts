@@ -26,10 +26,15 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     goCount: 0,
     pendingChoose: null,
     pendingPoktan: null,
+    pendingShake: [],
+    shakeCount: 0,
     message: '',
     winner: null,
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
+    poktanSkipsRemaining: 0,
+    isNagari: false,
+    nagariMultiplier: 1,
     ...overrides,
   }
 }

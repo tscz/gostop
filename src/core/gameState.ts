@@ -84,4 +84,28 @@ export interface GameState {
   winner: 'player' | 'ai' | 'draw' | null
   _hadTwoMatches: boolean
   scoreAtLastGo: number
+  // #8 — post-poktan hand-card skip
+  poktanSkipsRemaining: number
+  // #9 — nagari
+  isNagari: boolean
+  nagariMultiplier: number  // ×1 normally; doubles with each consecutive nagari
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SESSION STATE — persists across rounds
+// ═══════════════════════════════════════════════════════════════
+export interface RoundResult {
+  round: number
+  winner: 'player' | 'ai' | 'draw' | null
+  playerScore: number
+  aiScore: number
+  isNagari: boolean
+}
+
+export interface SessionState {
+  round: number
+  playerTotal: number
+  aiTotal: number
+  rounds: RoundResult[]
+  nagariMultiplier: number  // pending multiplier to carry into next game
 }

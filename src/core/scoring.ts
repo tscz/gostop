@@ -170,6 +170,27 @@ export function applyLoserPenalties(
 }
 
 // ═══════════════════════════════════════════════════════════════
+// NAGARI MULTIPLIER — #9
+// Applied to the WINNER's score in the game after a nagari.
+// Stacks: ×2 after one nagari, ×4 after two, etc.
+// ═══════════════════════════════════════════════════════════════
+export function applyNagariMultiplier(
+  score: number,
+  breakdown: ScoreBreakdown[],
+  multiplier: number,
+): { finalScore: number; breakdown: ScoreBreakdown[] } {
+  if (multiplier <= 1) return { finalScore: score, breakdown }
+  const finalScore = score * multiplier
+  return {
+    finalScore,
+    breakdown: [
+      ...breakdown,
+      { key: 'nagari_bonus', emoji: '🔄', label: `나가리 ×${multiplier}`, pts: finalScore - score },
+    ],
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CARD VALUE (for AI scoring)
 // ═══════════════════════════════════════════════════════════════
 export function cardValue(card: Card | null | undefined): number {

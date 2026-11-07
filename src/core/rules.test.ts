@@ -34,6 +34,9 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     winner: null,
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
+    poktanSkipsRemaining: 0,
+    isNagari: false,
+    nagariMultiplier: 1,
     ...overrides,
   }
 }
@@ -166,12 +169,32 @@ describe('applyTurn — state transitions', () => {
     expect(next.turn).toBe('player')
   })
 
-  it('game over when all hands and draw pile empty', () => {
+  it('game over — nagari when no GO called (goCount=0)', () => {
     const jan1 = c(1)
-    const state = makeState({ playerHand: [jan1], aiHand: [], field: [], drawPile: [] })
+    const state = makeState({ playerHand: [jan1], aiHand: [], field: [], drawPile: [], goCount: 0 })
+    const next = applyTurn(state, jan1, false, t)
+    expect(next.phase).toBe(GamePhase.GAME_OVER)
+    expect(next.winner).toBeNull()
+    expect(next.isNagari).toBe(true)
+  })
+
+  it('game over — winner determined when GO was called (goCount>0)', () => {
+    const jan1 = c(1)
+    // Player has 10pts pre-scored and called GO once; AI has 0
+    const state = makeState({
+      playerHand: [jan1],
+      aiHand: [],
+      field: [],
+      drawPile: [],
+      goCount: 1,
+      playerScore: 10,
+      aiScore: 0,
+      aiCaptured: [c(3), c(4), c(7), c(8), c(11), c(12), c(41)], // 6pi + bright = no penalties
+    })
     const next = applyTurn(state, jan1, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
     expect(next.winner).not.toBeNull()
+    expect(next.isNagari).toBe(false)
   })
 
   it('phase → GOSTOP when player reaches threshold with 0 GO count', () => {
