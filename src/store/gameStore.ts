@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 import { GamePhase } from '../core/gameState'
-import { initState, applyTurn, applyPoktan, applyShake } from '../core/rules'
-import { finaliseScore } from '../core/scoring' // used in finalisePlayerScore
+import { initState, applyTurn, applyPoktan, applyShake, applySkipTurn, resolveGameEnd } from '../core/rules'
+import { finaliseScore } from '../core/scoring'
 import { selectAiCard } from '../core/ai'
-import type { GameState, PendingShake } from '../core/gameState'
+import type { GameState, PendingShake, SessionState, RoundResult } from '../core/gameState'
 import type { Card } from '../core/cards'
 
 // ═══════════════════════════════════════════════════════════════
@@ -12,6 +12,7 @@ import type { Card } from '../core/cards'
 // ═══════════════════════════════════════════════════════════════
 interface GameStore {
   state: GameState
+  session: SessionState
 
   // Actions
   playCard: (card: Card) => void
@@ -20,8 +21,18 @@ interface GameStore {
   declareShake: (shake: PendingShake) => void
   callGo: () => void
   callStop: () => void
+  skipHandCard: () => void
   newGame: () => void
+  endSession: () => void
   playAiTurn: () => void
+}
+
+const INITIAL_SESSION: SessionState = {
+  round: 1,
+  playerTotal: 0,
+  aiTotal: 0,
+  rounds: [],
+  nagariMultiplier: 1,
 }
 
 // Helper to get current translation function
@@ -49,6 +60,7 @@ function finalisePlayerScore(state: GameState): {
 // ═══════════════════════════════════════════════════════════════
 export const useGameStore = create<GameStore>((set, get) => ({
   state: initState(),
+  session: { ...INITIAL_SESSION },
 
   playCard: (card: Card) => {
     set(store => {
@@ -136,37 +148,73 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Guard against double-click: only act when in GOSTOP phase
       if (prev.phase !== GamePhase.GOSTOP) return store
 
-      const { score: finalPlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(prev)
-      const winner: GameState['winner'] =
-        finalPlayerScore > prev.aiScore
-          ? 'player'
-          : prev.aiScore > finalPlayerScore
-            ? 'ai'
-            : 'draw'
+      const { score: basePlayerScore, breakdown: baseBreakdown } = finalisePlayerScore(prev)
+      const ge = resolveGameEnd(
+        basePlayerScore, baseBreakdown,
+        prev.aiScore, prev.aiBreakdown,
+        prev.playerCaptured, prev.aiCaptured,
+        prev.goCount, prev.nagariMultiplier, false,
+      )
 
       return {
         state: {
           ...prev,
-          playerScore: finalPlayerScore,
-          playerBreakdown: finalBreakdown,
+          playerScore: ge.finalPlayerPts,
+          playerBreakdown: ge.finalPlayerBD,
+          aiScore: ge.finalAiPts,
+          aiBreakdown: ge.finalAiBD,
           phase: GamePhase.GAME_OVER,
           pendingShake: [],
-          winner,
+          winner: ge.winner,
           message:
             prev.goCount > 0 && prev.shakeCount > 0
-              ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+              ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
               : prev.goCount > 0
-                ? `STOP! GO×${prev.goCount} → ${finalPlayerScore}P`
+                ? `STOP! GO×${prev.goCount} → ${ge.finalPlayerPts}P`
                 : prev.shakeCount > 0
-                  ? `STOP! 흔들기×${Math.pow(2, prev.shakeCount)} → ${finalPlayerScore}P`
+                  ? `STOP! 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
                   : 'STOP!',
         },
       }
     })
   },
 
+  skipHandCard: () => {
+    set(store => {
+      const prev = store.state
+      if (prev.turn !== 'player' || prev.phase !== GamePhase.SELECT || prev.poktanSkipsRemaining === 0) return store
+      return { state: applySkipTurn(prev, getT()) }
+    })
+  },
+
   newGame: () => {
-    set({ state: initState() })
+    set(store => {
+      const s = store.state
+      const session = store.session
+      if (s.phase !== GamePhase.GAME_OVER) {
+        return { state: initState({ nagariMultiplier: session.nagariMultiplier }), session }
+      }
+      const newNagariMultiplier = s.isNagari ? s.nagariMultiplier * 2 : 1
+      const roundResult: RoundResult = {
+        round: session.round,
+        winner: s.winner,
+        playerScore: s.playerScore,
+        aiScore: s.aiScore,
+        isNagari: s.isNagari,
+      }
+      const newSession: SessionState = {
+        round: session.round + 1,
+        playerTotal: session.playerTotal + (s.winner === 'player' ? s.playerScore : 0),
+        aiTotal: session.aiTotal + (s.winner === 'ai' ? s.aiScore : 0),
+        rounds: [...session.rounds, roundResult],
+        nagariMultiplier: newNagariMultiplier,
+      }
+      return { state: initState({ nagariMultiplier: newNagariMultiplier }), session: newSession }
+    })
+  },
+
+  endSession: () => {
+    set({ state: initState(), session: { ...INITIAL_SESSION } })
   },
 
   playAiTurn: () => {
@@ -174,23 +222,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const prev = store.state
       if (prev.turn !== 'ai' || prev.phase !== GamePhase.SELECT) return store
 
+      function aiStop(s: GameState): GameState {
+        const { score: basePlayerScore, breakdown: basePlayerBD } = finalisePlayerScore(s)
+        const ge = resolveGameEnd(
+          basePlayerScore, basePlayerBD,
+          s.aiScore, s.aiBreakdown,
+          s.playerCaptured, s.aiCaptured,
+          s.goCount, s.nagariMultiplier, false,
+        )
+        return {
+          ...s,
+          phase: GamePhase.GAME_OVER,
+          winner: ge.winner,
+          aiScore: ge.finalAiPts,
+          aiBreakdown: ge.finalAiBD,
+          playerScore: ge.finalPlayerPts,
+          playerBreakdown: ge.finalPlayerBD,
+          pendingShake: [],
+          message: 'AI: STOP!',
+        }
+      }
+
       // AI always declares Poktan when available
       if (prev.pendingPoktan) {
         const newState = applyPoktan(prev, true, getT())
         if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {
-          const { score: effectivePlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(newState)
+          const { score: effectivePlayerScore } = finalisePlayerScore(newState)
           if (newState.aiScore > effectivePlayerScore) {
-            return {
-              state: {
-                ...newState,
-                phase: GamePhase.GAME_OVER,
-                winner: 'ai' as const,
-                playerScore: effectivePlayerScore,
-                playerBreakdown: finalBreakdown,
-                pendingShake: [],
-                message: 'AI: STOP!',
-              },
-            }
+            return { state: aiStop(newState) }
           }
         }
         return { state: newState }
@@ -201,20 +260,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // AI Go/Stop decision after its turn
       if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {
-        const { score: effectivePlayerScore, breakdown: finalBreakdown } = finalisePlayerScore(newState)
+        const { score: effectivePlayerScore } = finalisePlayerScore(newState)
         // Only call STOP when strictly ahead — on a tie, keep playing
         if (newState.aiScore > effectivePlayerScore) {
-          return {
-            state: {
-              ...newState,
-              phase: GamePhase.GAME_OVER,
-              winner: 'ai' as const,
-              playerScore: effectivePlayerScore,
-              playerBreakdown: finalBreakdown,
-              pendingShake: [],
-              message: 'AI: STOP!',
-            },
-          }
+          return { state: aiStop(newState) }
         }
       }
 

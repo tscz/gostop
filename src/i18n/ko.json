@@ -41,5 +41,16 @@
   "noPoints": "아직 점수 없음",
   "showDetails": "카드 상세 보기",
   "shakeDesc": "같은 달 패 3장, 바닥 없음 — 선언 시 최종 점수 2배!",
-  "chooseMatch": "어떤 카드를 가져올지 선택:"
+  "chooseMatch": "어떤 카드를 가져올지 선택:",
+  "skipHandCard": "패 내기 건너뜀 (폭탄 보너스)",
+  "skipAvailable": "건너뛰기 가능",
+  "skipRemaining": "번 남음",
+  "nagari": "나가리 — 다음 판 2배!",
+  "nagariMultiplier": "나가리 ×{{n}} 적용 중",
+  "sessionTitle": "세션",
+  "sessionRound": "라운드",
+  "sessionTotal": "합계",
+  "sessionHistory": "기록",
+  "endSession": "세션 종료",
+  "nagariDraw": "나가리!"
 }

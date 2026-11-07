@@ -15,7 +15,7 @@ import HelpModal from './HelpModal'
 
 export default function GameBoard() {
   const { t } = useTranslation()
-  const { state: g, playCard, chooseMatch, declarePoktan, declareShake, callGo, callStop, newGame, playAiTurn } = useGameStore()
+  const { state: g, session, playCard, chooseMatch, declarePoktan, declareShake, callGo, callStop, skipHandCard, newGame, endSession, playAiTurn } = useGameStore()
   const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const aiClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
@@ -84,6 +84,7 @@ export default function GameBoard() {
   const isOver = g.phase === GamePhase.GAME_OVER
   const canPoktan = isPlayer && g.pendingPoktan !== null
   const canShake = isPlayer && g.pendingShake.length > 0
+  const canSkip = isPlayer && g.poktanSkipsRemaining > 0
   // Covers SELECT, GOSTOP, CHOOSE_MATCH — any phase where player must act
   const isPlayerTurn = g.turn === 'player' && !isOver
 
@@ -339,6 +340,34 @@ export default function GameBoard() {
             </div>
           ))}
 
+          {/* Nagari multiplier active indicator */}
+          {g.nagariMultiplier > 1 && !isOver && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-2 flex items-center gap-2">
+              <span className="text-amber-400 text-sm">🔄</span>
+              <span className="text-amber-300/80 text-xs font-semibold">
+                {t('nagariMultiplier').replace('{{n}}', String(g.nagariMultiplier))}
+              </span>
+            </div>
+          )}
+
+          {/* Post-poktan skip */}
+          {canSkip && (
+            <div className="rounded-2xl border-2 border-cyan-500/40 bg-cyan-950/30 p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-cyan-300 font-black text-sm mb-0.5">⏭️ {t('skipAvailable')}</p>
+                  <p className="text-cyan-200/60 text-xs">{t('skipHandCard')} · {g.poktanSkipsRemaining} {t('skipRemaining')}</p>
+                </div>
+                <button
+                  onClick={skipHandCard}
+                  className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-cyan-900/40 transition-all"
+                >
+                  ⏭️ Skip
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Choose match */}
           {isChoose && g.pendingChoose && (
             <div className="rounded-2xl border-2 border-yellow-500/40 bg-yellow-950/30 p-3">
@@ -429,24 +458,32 @@ export default function GameBoard() {
           {/* Game over */}
           {isOver && (
             <div
-              className="rounded-2xl border-2 border-yellow-500/50 p-5 text-center"
+              className="rounded-2xl border-2 p-5 text-center"
               style={{
-                background:
-                  'radial-gradient(ellipse at center, rgba(120,60,0,0.4) 0%, rgba(0,0,0,0.2) 100%)',
+                borderColor: g.isNagari ? 'rgba(251,191,36,0.5)' : 'rgba(234,179,8,0.5)',
+                background: g.isNagari
+                  ? 'radial-gradient(ellipse at center, rgba(80,20,120,0.5) 0%, rgba(0,0,0,0.2) 100%)'
+                  : 'radial-gradient(ellipse at center, rgba(120,60,0,0.4) 0%, rgba(0,0,0,0.2) 100%)',
               }}
             >
               <p className="text-5xl mb-2">
-                {g.winner === 'player' ? '🎉' : g.winner === 'ai' ? '🤖' : '🤝'}
+                {g.isNagari ? '🔄' : g.winner === 'player' ? '🎉' : g.winner === 'ai' ? '🤖' : '🤝'}
               </p>
-              <p className="text-yellow-300 text-2xl font-black mb-1">{t('gameOver')}</p>
-              <p className="text-white/80">
-                {t('winner')}:{' '}
-                {g.winner === 'player'
-                  ? `${t('you')} (${g.playerScore}${t('pts')})`
-                  : g.winner === 'ai'
-                    ? `${t('ai')} (${g.aiScore}${t('pts')})`
-                    : t('draw')}
+              <p className="text-yellow-300 text-2xl font-black mb-1">
+                {g.isNagari ? t('nagariDraw') : t('gameOver')}
               </p>
+              {g.isNagari ? (
+                <p className="text-purple-200/90 text-sm">{t('nagari')}</p>
+              ) : (
+                <p className="text-white/80">
+                  {t('winner')}:{' '}
+                  {g.winner === 'player'
+                    ? `${t('you')} (${g.playerScore}${t('pts')})`
+                    : g.winner === 'ai'
+                      ? `${t('ai')} (${g.aiScore}${t('pts')})`
+                      : t('draw')}
+                </p>
+              )}
               <button
                 onClick={newGame}
                 className="mt-4 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-black px-8 py-2.5 rounded-xl transition-all shadow-lg"
@@ -459,6 +496,52 @@ export default function GameBoard() {
 
         {/* SIDEBAR */}
         <div className="xl:w-80 2xl:w-96 flex flex-col gap-2.5 min-w-0">
+
+          {/* Session panel */}
+          <div className="rounded-2xl border border-white/6 bg-white/3 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-white/30 text-[10px] uppercase tracking-widest">{t('sessionTitle')}</p>
+              <button
+                onClick={endSession}
+                className="text-white/30 hover:text-white/60 text-[10px] transition-colors"
+              >
+                {t('endSession')}
+              </button>
+            </div>
+            <div className="flex gap-4 mb-2">
+              <div className="text-center">
+                <p className="text-blue-300 text-lg font-black tabular-nums">{session.playerTotal}</p>
+                <p className="text-blue-300/50 text-[10px]">👤 {t('sessionTotal')}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-red-300 text-lg font-black tabular-nums">{session.aiTotal}</p>
+                <p className="text-red-300/50 text-[10px]">🤖 {t('sessionTotal')}</p>
+              </div>
+              <div className="text-center ml-auto">
+                <p className="text-white/60 text-lg font-black tabular-nums">{session.round}</p>
+                <p className="text-white/30 text-[10px]">{t('sessionRound')}</p>
+              </div>
+            </div>
+            {session.rounds.length > 0 && (
+              <div className="space-y-0.5">
+                {session.rounds.map(r => (
+                  <div key={r.round} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-white/30 w-5">R{r.round}</span>
+                    {r.isNagari ? (
+                      <span className="text-purple-300/70 flex-1">🔄 나가리</span>
+                    ) : r.winner === 'player' ? (
+                      <span className="text-blue-300/70 flex-1">👤 +{r.playerScore}pt</span>
+                    ) : r.winner === 'ai' ? (
+                      <span className="text-red-300/70 flex-1">🤖 +{r.aiScore}pt</span>
+                    ) : (
+                      <span className="text-white/40 flex-1">{t('draw')}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <ExplainerPanel exp={g.lastExp} />
 
           {g.history.length > 0 && (

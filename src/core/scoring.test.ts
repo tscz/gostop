@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore } from './scoring'
+import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore, applyLoserPenalties } from './scoring'
 import { DECK, CardType } from './cards'
 
 const c = (id: number) => DECK.find(card => card.id === id)!
@@ -11,6 +11,102 @@ const c = (id: number) => DECK.find(card => card.id === id)!
 // Blue ribbons: 22=Jun, 34=Sep, 38=Oct
 // Double junk: 44=Nov, 48=Dec
 // countsAsDoublePi: 17=May(Tane), 33=Sep(Tane)
+
+// ─────────────────────────────────────────────
+// applyLoserPenalties
+// ─────────────────────────────────────────────
+describe('applyLoserPenalties', () => {
+  // Brights: 1=Jan, 9=Mar, 29=Aug, 41=Nov
+  // Junks: 3=Jan, 4=Jan, 7=Feb, 8=Feb, 11=Mar, 12=Mar, 15=Apr, 16=Apr
+  // Double junk: 44=Nov
+
+  // 6 pi + 1 bright: safe loser (no penalties trigger)
+  const loserSafe = [c(3), c(4), c(7), c(8), c(11), c(12), c(9)]
+
+  it('no conditions met → score and breakdown unchanged', () => {
+    const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
+    const { finalScore, breakdown } = applyLoserPenalties(10, base, [c(1)], loserSafe, 0)
+    expect(finalScore).toBe(10)
+    expect(breakdown).toHaveLength(1)
+  })
+
+  it('고박: loser called GO → ×2', () => {
+    const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
+    const { finalScore, breakdown } = applyLoserPenalties(10, base, [c(1)], loserSafe, 1)
+    expect(finalScore).toBe(20)
+    expect(breakdown.find(b => b.key === 'gobak')).toBeDefined()
+    expect(breakdown.find(b => b.key === 'gobak')!.pts).toBe(10)
+  })
+
+  it('광박: winner has brights, loser has none → ×2', () => {
+    const base = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 10 }]
+    const loserJunks = [c(3), c(4), c(7), c(8), c(11), c(12)] // 6 pi, no brights
+    const { finalScore, breakdown } = applyLoserPenalties(10, base, [c(1), c(9), c(29)], loserJunks, 0)
+    expect(finalScore).toBe(20)
+    expect(breakdown.find(b => b.key === 'gwangbak')).toBeDefined()
+  })
+
+  it('광박 does not trigger when winner has no brights', () => {
+    const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
+    const loserJunks = [c(3), c(4), c(7), c(8), c(11), c(12)]
+    const { finalScore } = applyLoserPenalties(10, base, [], loserJunks, 0)
+    expect(finalScore).toBe(10)
+  })
+
+  it('광박 does not trigger when loser has brights', () => {
+    const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
+    const { finalScore } = applyLoserPenalties(10, base, [c(1)], loserSafe, 0)
+    expect(finalScore).toBe(10)
+  })
+
+  it('피박: loser has fewer than 6 pi → ×2', () => {
+    const base = [{ key: 'pi', emoji: '🃏', label: '피', pts: 10 }]
+    const loserFewJunks = [c(3), c(4), c(7), c(8), c(11)] // 5 pi, no brights
+    const { finalScore, breakdown } = applyLoserPenalties(10, base, [], loserFewJunks, 0)
+    expect(finalScore).toBe(20)
+    expect(breakdown.find(b => b.key === 'pibak')).toBeDefined()
+  })
+
+  it('피박: double junk counts as 2 pi', () => {
+    const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
+    // 4 junks + 1 double junk = 6 pi → no pi bak
+    const cards = [c(3), c(4), c(7), c(8), c(44)] // c(44) = Nov double junk
+    const { finalScore } = applyLoserPenalties(10, base, [], cards, 0)
+    expect(finalScore).toBe(10)
+  })
+
+  it('고박 + 광박 stack to ×4', () => {
+    const base = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 10 }]
+    const loserJunks = [c(3), c(4), c(7), c(8), c(11), c(12)] // 6 pi, no brights
+    const { finalScore } = applyLoserPenalties(10, base, [c(1), c(9), c(29)], loserJunks, 1)
+    expect(finalScore).toBe(40) // go bak ×2 then gwang bak ×2
+  })
+
+  it('광박 + 피박 stack to ×4', () => {
+    const base = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 5 }, { key: 'pi', emoji: '🃏', label: '피', pts: 5 }]
+    const loserFewJunks = [c(3), c(4)] // 2 pi, no brights
+    const { finalScore } = applyLoserPenalties(10, base, [c(1), c(9), c(29)], loserFewJunks, 0)
+    expect(finalScore).toBe(40)
+  })
+
+  it('고박 + 광박 + 피박 stack to ×8', () => {
+    const base = [{ key: 'samgwang', emoji: '💫', label: '삼광', pts: 5 }, { key: 'pi', emoji: '🃏', label: '피', pts: 5 }]
+    const loserFewJunks = [c(3), c(4)] // 2 pi, no brights
+    const { finalScore, breakdown } = applyLoserPenalties(10, base, [c(1), c(9), c(29)], loserFewJunks, 1)
+    expect(finalScore).toBe(80)
+    expect(breakdown.find(b => b.key === 'gobak')).toBeDefined()
+    expect(breakdown.find(b => b.key === 'gwangbak')).toBeDefined()
+    expect(breakdown.find(b => b.key === 'pibak')).toBeDefined()
+    expect(breakdown.reduce((s, b) => s + b.pts, 0)).toBe(80)
+  })
+
+  it('breakdown pts sum equals finalScore when base sums to input score', () => {
+    const base5 = [{ key: 'test', emoji: '✅', label: 'test', pts: 5 }]
+    const loserFewJunks = [c(3), c(4)] // triggers gwang bak + pi bak
+    const { finalScore, breakdown } = applyLoserPenalties(5, base5, [c(1)], loserFewJunks, 1)
+    expect(breakdown.reduce((s, b) => s + b.pts, 0)).toBe(finalScore)
+  })
+})
 
 // ─────────────────────────────────────────────
 // cardValue

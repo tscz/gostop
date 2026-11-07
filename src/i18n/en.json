@@ -41,5 +41,16 @@
   "noPoints": "No points yet",
   "showDetails": "Show card details",
   "shakeDesc": "3 same-month cards in hand, no field match — declare to double your final score!",
-  "chooseMatch": "Choose which card to capture:"
+  "chooseMatch": "Choose which card to capture:",
+  "skipHandCard": "Skip hand card (post-poktan bonus)",
+  "skipAvailable": "Skip available",
+  "skipRemaining": "skips left",
+  "nagari": "나가리 Nagari — Next game pays double!",
+  "nagariMultiplier": "Nagari ×{{n}} active",
+  "sessionTitle": "Session",
+  "sessionRound": "Round",
+  "sessionTotal": "Total",
+  "sessionHistory": "History",
+  "endSession": "End Session",
+  "nagariDraw": "Nagari!"
 }
