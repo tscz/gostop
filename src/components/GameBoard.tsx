@@ -7,14 +7,10 @@ import { selectAiCard } from '../core/ai'
 import type { Card } from '../core/cards'
 import CardSVG from './CardSVG'
 import ScorePanel from './ScorePanel'
-import ExplainerPanel from './ExplainerPanel'
 import Timeline from './Timeline'
 import CapturedArea from './CapturedArea'
 import Header from './Header'
 import HelpModal from './HelpModal'
-
-// Card-type accent colors used for capture flash (matches badge palette)
-const CAPTURE_FLASH_COLOR = 'rgba(252,211,77,0.6)'
 
 export default function GameBoard() {
   const { t } = useTranslation()
@@ -27,13 +23,12 @@ export default function GameBoard() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
   const [drawnCard, setDrawnCard] = useState<Card | null>(null)
-  // F4: match-highlighting state
+  // match-highlighting state
   const [selectedHandCard, setSelectedHandCard] = useState<Card | null>(null)
   const [hoverMonth, setHoverMonth] = useState<number | null>(null)
-  // F3: capture flash
-  const [captureFlash, setCaptureFlash] = useState<'player' | 'ai' | null>(null)
-  const prevPlayerCapLen = useRef(0)
-  const prevAiCapLen = useRef(0)
+  // move toast
+  const [toastVisible, setToastVisible] = useState(false)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   // Intercept player card play: flip the pile card first, then execute
   const handlePlayCard = (c: Card) => {
@@ -57,22 +52,14 @@ export default function GameBoard() {
     }
   }
 
-  // F3: watch captured counts for capture flash
+  // Show move toast after each turn, auto-dismiss after 3.5 s
   useEffect(() => {
-    if (g.playerCaptured.length > prevPlayerCapLen.current) {
-      setCaptureFlash('player')
-      setTimeout(() => setCaptureFlash(null), 700)
-    }
-    prevPlayerCapLen.current = g.playerCaptured.length
-  }, [g.playerCaptured.length])
-
-  useEffect(() => {
-    if (g.aiCaptured.length > prevAiCapLen.current) {
-      setCaptureFlash('ai')
-      setTimeout(() => setCaptureFlash(null), 700)
-    }
-    prevAiCapLen.current = g.aiCaptured.length
-  }, [g.aiCaptured.length])
+    if (!g.lastExp) return
+    setToastVisible(true)
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 3500)
+    return () => clearTimeout(toastTimerRef.current)
+  }, [g.history.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // AI turn effect — sequential: wait for player animation → flip hand card → flip pile card → move
   useEffect(() => {
@@ -135,6 +122,15 @@ export default function GameBoard() {
   const aiGlow = '0 0 0 2px rgba(248,113,113,0.7), 0 0 20px rgba(248,113,113,0.25)'
   const playerGlow = '0 0 0 2px rgba(147,197,253,0.7), 0 0 20px rgba(147,197,253,0.25)'
 
+  const toastBorder: Record<string, string> = {
+    excellent: 'border-yellow-500/50', good: 'border-emerald-500/50',
+    ok: 'border-blue-500/40', poor: 'border-red-500/50', neutral: 'border-slate-600/40',
+  }
+  const toastBg: Record<string, string> = {
+    excellent: 'bg-yellow-950/90', good: 'bg-emerald-950/90',
+    ok: 'bg-blue-950/90', poor: 'bg-red-950/90', neutral: 'bg-slate-900/90',
+  }
+
   // F4: month to highlight on field — hover preview takes priority over selection
   const highlightMonth: number | null = hoverMonth ?? selectedHandCard?.month ?? null
 
@@ -161,21 +157,10 @@ export default function GameBoard() {
             animate={{ boxShadow: isAI ? aiGlow : 'none', opacity: isPlayerTurn ? 0.4 : 1 }}
             transition={{ duration: 0.4 }}
           >
-            {/* F5: active-turn top stripe */}
-            {isAI && (
-              <motion.div
-                className="absolute top-0 left-0 right-0 h-0.5 bg-red-400"
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: 1 }}
-                style={{ transformOrigin: 'left' }}
-                transition={{ duration: 0.35 }}
-              />
-            )}
             <div className="flex items-center gap-2">
               <span className="text-red-400/90 font-bold text-sm flex-shrink-0">🤖 {t('aiLabel')}</span>
-              {/* F5: bounce instead of pulse — perceptible at any screen brightness */}
               {isAI && (
-                <span className="text-yellow-300/90 text-xs animate-bounce">{t('aiThinks')}</span>
+                <span className="text-yellow-300/70 text-xs">{t('aiThinks')}</span>
               )}
               {/* Compact face-down strip */}
               <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
@@ -217,23 +202,26 @@ export default function GameBoard() {
                   </motion.div>
                 </motion.div>
               )}
-              {/* F3: capture flash ring on AI score */}
-              <motion.div
-                animate={captureFlash === 'ai' ? { boxShadow: `0 0 0 3px ${CAPTURE_FLASH_COLOR}` } : { boxShadow: '0 0 0 0px transparent' }}
-                transition={{ duration: 0.15 }}
-                className="rounded-xl"
-              >
-                <ScorePanel
-                  score={g.aiScore}
-                  breakdown={g.aiBreakdown}
-                  label={t('score')}
-                  accent="text-red-300"
-                />
-              </motion.div>
+              <ScorePanel
+                score={g.aiScore}
+                breakdown={g.aiBreakdown}
+                label={t('score')}
+                accent="text-red-300"
+              />
             </div>
           </motion.div>
 
           {/* Field */}
+          {/* Nagari multiplier — stable indicator, shown between rounds */}
+          {g.nagariMultiplier > 1 && !isOver && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-1.5 flex items-center gap-2">
+              <span className="text-amber-400 text-sm">🔄</span>
+              <span className="text-amber-300/80 text-xs font-semibold">
+                {t('nagariMultiplier').replace('{{n}}', String(g.nagariMultiplier))}
+              </span>
+            </div>
+          )}
+
           <div className="rounded-2xl border border-emerald-900/40 bg-emerald-950/15 p-3">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-emerald-500/80 text-sm font-semibold">🍀 {t('field')}</span>
@@ -352,120 +340,6 @@ export default function GameBoard() {
             </div>
           </div>
 
-          {/* Poktan declaration — F6: compact + slide entrance */}
-          <AnimatePresence>
-            {canPoktan && g.pendingPoktan && (
-              <motion.div
-                initial={{ opacity: 0, y: -12, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                exit={{ opacity: 0, y: -8, height: 0 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                className="rounded-2xl border-2 border-orange-500/40 bg-orange-950/30 overflow-hidden"
-              >
-                <div className="flex items-center gap-3 p-2.5 px-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-orange-300 font-black text-sm">💣 폭탄 Poktan!</p>
-                    <p className="text-orange-200/50 text-xs truncate">{t('poktanDesc')}</p>
-                  </div>
-                  <div className="flex gap-1 items-center flex-shrink-0">
-                    {[...g.pendingPoktan.handCards, g.pendingPoktan.fieldCard].map((c, i) => (
-                      <div key={c.id} className="relative">
-                        <CardSVG card={c} size={36} />
-                        {i === g.pendingPoktan!.handCards.length && (
-                          <span className="absolute -top-1 -right-1 text-[8px] bg-orange-500 text-white rounded-full px-1 font-bold leading-4">F</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    onClick={declarePoktan}
-                    className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all flex-shrink-0"
-                  >
-                    💣 Poktan!
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Shake declaration — F6: compact + slide entrance */}
-          <AnimatePresence>
-            {canShake && g.pendingShake.map(shake => (
-              <motion.div
-                key={shake.handCards[0].month}
-                initial={{ opacity: 0, y: -12, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                exit={{ opacity: 0, y: -8, height: 0 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 overflow-hidden"
-              >
-                <div className="flex items-center gap-3 p-2.5 px-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-purple-300 font-black text-sm">🫨 흔들기 Shake!</p>
-                    <p className="text-purple-200/50 text-xs truncate">{t('shakeDesc')}</p>
-                  </div>
-                  <div className="flex gap-1 items-center flex-shrink-0">
-                    {shake.handCards.map(c => (
-                      <CardSVG key={c.id} card={c} size={36} />
-                    ))}
-                  </div>
-                  <button
-                    onClick={() => declareShake(shake)}
-                    className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all flex-shrink-0"
-                  >
-                    🫨 Shake!
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          {/* Nagari multiplier active indicator */}
-          {g.nagariMultiplier > 1 && !isOver && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-2 flex items-center gap-2">
-              <span className="text-amber-400 text-sm">🔄</span>
-              <span className="text-amber-300/80 text-xs font-semibold">
-                {t('nagariMultiplier').replace('{{n}}', String(g.nagariMultiplier))}
-              </span>
-            </div>
-          )}
-
-          {/* Post-poktan skip */}
-          {canSkip && (
-            <div className="rounded-2xl border-2 border-cyan-500/40 bg-cyan-950/30 p-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-cyan-300 font-black text-sm mb-0.5">⏭️ {t('skipAvailable')}</p>
-                  <p className="text-cyan-200/60 text-xs">{t('skipHandCard')} · {g.poktanSkipsRemaining} {t('skipRemaining')}</p>
-                </div>
-                <button
-                  onClick={skipHandCard}
-                  className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-cyan-900/40 transition-all"
-                >
-                  ⏭️ Skip
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Choose match */}
-          {isChoose && g.pendingChoose && (
-            <div className="rounded-2xl border-2 border-yellow-500/40 bg-yellow-950/30 p-3">
-              <p className="text-yellow-300 font-bold text-sm mb-2.5">{t('chooseMatch')}</p>
-              <div className="flex gap-3">
-                {g.pendingChoose.matches.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => chooseMatch(c)}
-                    className="transition-transform hover:scale-110 active:scale-95"
-                  >
-                    <CardSVG card={c} size={sz.hand} highlighted />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Player hand — click to board background clears selection */}
           <motion.div
             className="rounded-2xl border border-white/6 bg-white/3 p-3 relative overflow-hidden"
@@ -473,16 +347,6 @@ export default function GameBoard() {
             transition={{ duration: 0.4 }}
             onClick={(e) => { if (e.currentTarget === e.target) setSelectedHandCard(null) }}
           >
-            {/* F5: active-turn top stripe */}
-            {isPlayerTurn && (
-              <motion.div
-                className="absolute top-0 left-0 right-0 h-0.5 bg-blue-400"
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: 1 }}
-                style={{ transformOrigin: 'left' }}
-                transition={{ duration: 0.35 }}
-              />
-            )}
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-blue-300/90 font-bold text-sm">👤 {t('yourHand')}</span>
@@ -492,19 +356,12 @@ export default function GameBoard() {
                   </span>
                 )}
               </div>
-              {/* F3: capture flash ring on player score */}
-              <motion.div
-                animate={captureFlash === 'player' ? { boxShadow: `0 0 0 3px ${CAPTURE_FLASH_COLOR}` } : { boxShadow: '0 0 0 0px transparent' }}
-                transition={{ duration: 0.15 }}
-                className="rounded-xl"
-              >
-                <ScorePanel
-                  score={g.playerScore}
-                  breakdown={g.playerBreakdown}
-                  label={t('score')}
-                  accent="text-blue-300"
-                />
-              </motion.div>
+              <ScorePanel
+                score={g.playerScore}
+                breakdown={g.playerBreakdown}
+                label={t('score')}
+                accent="text-blue-300"
+              />
             </div>
             <div className="flex gap-2 flex-wrap min-h-[4rem] items-end">
               <AnimatePresence mode="popLayout">
@@ -598,18 +455,6 @@ export default function GameBoard() {
             </div>
           )}
 
-          {/* F1: ExplainerPanel inline — the core learning feature, now above fold on mobile */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={g.lastExp ? g.history.length : 'empty'}
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-            >
-              <ExplainerPanel exp={g.lastExp} />
-            </motion.div>
-          </AnimatePresence>
         </div>
 
         {/* SIDEBAR */}
@@ -686,6 +531,111 @@ export default function GameBoard() {
           </div>
         </div>
       </div>
+
+      {/* ── ACTION SHEET — slides up from bottom, never pushes layout ──────── */}
+      <AnimatePresence>
+        {(isChoose || canPoktan || canShake || canSkip) && (
+          <motion.div
+            className="fixed bottom-0 left-0 right-0 z-40"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+          >
+            <div
+              className="bg-slate-900/95 backdrop-blur-md border-t border-white/10 px-3 pt-3 space-y-2"
+              style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}
+            >
+              {/* Choose match */}
+              {isChoose && g.pendingChoose && (
+                <div>
+                  <p className="text-yellow-300 font-bold text-sm mb-2">{t('chooseMatch')}</p>
+                  <div className="flex gap-3">
+                    {g.pendingChoose.matches.map(c => (
+                      <button key={c.id} onClick={() => chooseMatch(c)} className="transition-transform active:scale-95 hover:scale-110">
+                        <CardSVG card={c} size={sz.hand} highlighted />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Poktan */}
+              {canPoktan && g.pendingPoktan && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-orange-300 font-black text-sm">💣 폭탄 Poktan!</p>
+                    <p className="text-orange-200/50 text-xs truncate">{t('poktanDesc')}</p>
+                  </div>
+                  <div className="flex gap-1 items-center flex-shrink-0">
+                    {[...g.pendingPoktan.handCards, g.pendingPoktan.fieldCard].map((c, i) => (
+                      <div key={c.id} className="relative">
+                        <CardSVG card={c} size={32} />
+                        {i === g.pendingPoktan!.handCards.length && (
+                          <span className="absolute -top-1 -right-1 text-[8px] bg-orange-500 text-white rounded-full px-1 font-bold leading-4">F</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={declarePoktan} className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all flex-shrink-0">
+                    💣 Poktan!
+                  </button>
+                </div>
+              )}
+              {/* Shake */}
+              {canShake && g.pendingShake.map(shake => (
+                <div key={shake.handCards[0].month} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-purple-300 font-black text-sm">🫨 흔들기 Shake!</p>
+                    <p className="text-purple-200/50 text-xs truncate">{t('shakeDesc')}</p>
+                  </div>
+                  <div className="flex gap-1 items-center flex-shrink-0">
+                    {shake.handCards.map(c => <CardSVG key={c.id} card={c} size={32} />)}
+                  </div>
+                  <button onClick={() => declareShake(shake)} className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all flex-shrink-0">
+                    🫨 Shake!
+                  </button>
+                </div>
+              ))}
+              {/* Skip */}
+              {canSkip && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-cyan-300 font-black text-sm">⏭️ {t('skipAvailable')}</p>
+                    <p className="text-cyan-200/60 text-xs truncate">{t('skipHandCard')} · {g.poktanSkipsRemaining} {t('skipRemaining')}</p>
+                  </div>
+                  <button onClick={skipHandCard} className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-cyan-900/40 transition-all flex-shrink-0">
+                    ⏭️ Skip
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MOVE TOAST — non-blocking overlay, auto-dismisses ───────────────── */}
+      <AnimatePresence>
+        {toastVisible && g.lastExp && !isChoose && !canPoktan && !canShake && !canSkip && (
+          <motion.div
+            key={g.history.length}
+            className="fixed bottom-6 left-3 right-3 z-50 pointer-events-none"
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+          >
+            <div className={`rounded-2xl border-2 ${toastBorder[g.lastExp.quality] ?? toastBorder.neutral} ${toastBg[g.lastExp.quality] ?? toastBg.neutral} p-3 backdrop-blur-sm`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-white/40 text-[10px] uppercase tracking-widest">{t('moveExp')}</span>
+                <span className="ml-auto text-xs">{g.lastExp.who === 'player' ? '👤' : '🤖'}</span>
+              </div>
+              {g.lastExp.lines.map((l, i) => (
+                <p key={i} className="text-white/90 text-sm leading-relaxed">{l}</p>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
