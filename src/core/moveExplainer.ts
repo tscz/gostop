@@ -1,7 +1,17 @@
 import { cardValue } from './scoring'
 import { MONTHS } from './cards'
-import type { Card } from './cards'
+import type { Card, CardType } from './cards'
 import type { ScoreBreakdown, MoveExplanation } from './gameState'
+
+function typeTag(type: CardType): string {
+  switch (type) {
+    case 'bright':      return '(광) '
+    case 'animal':      return '(고) '
+    case 'ribbon':      return '(띠) '
+    case 'double_junk': return '(쌍피) '
+    case 'junk':        return '(피) '
+  }
+}
 
 const GOSTOP_THRESHOLD = 7
 
@@ -37,7 +47,7 @@ export function buildExplanation({
   if (handMatches.length > 0) {
     const gain = cardValue(played) + handMatches.reduce((s, c) => s + cardValue(c), 0)
     quality = gain >= 50 ? 'excellent' : gain >= 20 ? 'good' : 'ok'
-    lines.push(`✅ ${t('captured')}: ${MONTHS[played.month - 1].ko} (${handMatches.length} ${t('matchFound')})`)
+    lines.push(`✅ ${t('captured')}: ${MONTHS[played.month - 1].ko} ${typeTag(played.type)}(${handMatches.length} ${t('matchFound')})`)
   } else {
     quality = 'poor'
     lines.push(`⚠️ ${t('noMatch')} — ${t('cardDiscarded')}`)
@@ -49,9 +59,9 @@ export function buildExplanation({
       lines.push(`🔒 뻑 Ppeok! ${drawn.month}월 → ${t('ppeokDesc')}`)
       quality = 'ok'
     } else if (drawnMatches.length > 0) {
-      lines.push(`🎴 ${t('drew')} ${drawn.month}월 → ${t('capturedDraw')}!`)
+      lines.push(`🎴 ${t('drew')} ${drawn.month}월 ${typeTag(drawn.type)}→ ${t('capturedDraw')}!`)
     } else {
-      lines.push(`🎴 ${t('drew')} ${drawn.month}월 → ${t('addedToField')}`)
+      lines.push(`🎴 ${t('drew')} ${drawn.month}월 ${typeTag(drawn.type)}→ ${t('addedToField')}`)
     }
   }
 
@@ -60,7 +70,14 @@ export function buildExplanation({
   if (special === 'sassak') { lines.push(`🌪️ 싹쓸이 Sa-ssak! ${t('sassakDesc')}`); quality = 'excellent' }
 
   const delta = newPts - prevPts
-  if (delta > 0) lines.push(`🎉 +${delta} ${t('pts')}! (${t('total')}: ${newPts})`)
+  if (delta > 0) {
+    if (newPts < GOSTOP_THRESHOLD) {
+      const rem = GOSTOP_THRESHOLD - newPts
+      lines.push(`🎉 +${delta}${t('pts')}! → ${newPts}${t('pts')} (${rem} ${t('toStop')})`)
+    } else {
+      lines.push(`🎉 +${delta}${t('pts')}! → ${newPts}${t('pts')}`)
+    }
+  }
 
   const prevKeys = new Set((prevBreakdown || []).map(b => b.key))
   for (const b of breakdown) {
