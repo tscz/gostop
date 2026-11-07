@@ -13,6 +13,9 @@ import CapturedArea from './CapturedArea'
 import Header from './Header'
 import HelpModal from './HelpModal'
 
+// Card-type accent colors used for capture flash (matches badge palette)
+const CAPTURE_FLASH_COLOR = 'rgba(252,211,77,0.6)'
+
 export default function GameBoard() {
   const { t } = useTranslation()
   const { state: g, session, playCard, chooseMatch, declarePoktan, declareShake, callGo, callStop, skipHandCard, newGame, endSession, playAiTurn } = useGameStore()
@@ -24,9 +27,18 @@ export default function GameBoard() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
   const [drawnCard, setDrawnCard] = useState<Card | null>(null)
+  // F4: match-highlighting state
+  const [selectedHandCard, setSelectedHandCard] = useState<Card | null>(null)
+  const [hoverMonth, setHoverMonth] = useState<number | null>(null)
+  // F3: capture flash
+  const [captureFlash, setCaptureFlash] = useState<'player' | 'ai' | null>(null)
+  const prevPlayerCapLen = useRef(0)
+  const prevAiCapLen = useRef(0)
 
   // Intercept player card play: flip the pile card first, then execute
   const handlePlayCard = (c: Card) => {
+    setSelectedHandCard(null)
+    setHoverMonth(null)
     const top = g.drawPile[0] ?? null
     setDrawnCard(top)
     drawnCardTimerRef.current = setTimeout(() => {
@@ -34,6 +46,33 @@ export default function GameBoard() {
       drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
     }, 650)
   }
+
+  // F4: tap-to-select, second-tap-to-play
+  const handleCardTap = (c: Card) => {
+    if (!isPlayer) return
+    if (selectedHandCard?.id === c.id) {
+      handlePlayCard(c)
+    } else {
+      setSelectedHandCard(c)
+    }
+  }
+
+  // F3: watch captured counts for capture flash
+  useEffect(() => {
+    if (g.playerCaptured.length > prevPlayerCapLen.current) {
+      setCaptureFlash('player')
+      setTimeout(() => setCaptureFlash(null), 700)
+    }
+    prevPlayerCapLen.current = g.playerCaptured.length
+  }, [g.playerCaptured.length])
+
+  useEffect(() => {
+    if (g.aiCaptured.length > prevAiCapLen.current) {
+      setCaptureFlash('ai')
+      setTimeout(() => setCaptureFlash(null), 700)
+    }
+    prevAiCapLen.current = g.aiCaptured.length
+  }, [g.aiCaptured.length])
 
   // AI turn effect — sequential: wait for player animation → flip hand card → flip pile card → move
   useEffect(() => {
@@ -67,6 +106,11 @@ export default function GameBoard() {
     }
   }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
 
+  // Clear selection when it's no longer the player's turn
+  useEffect(() => {
+    if (g.turn !== 'player' || g.phase !== GamePhase.SELECT) setSelectedHandCard(null)
+  }, [g.turn, g.phase])
+
   // Responsive card sizes — larger on wide desktop
   const is2xl = useMemo(() => window.matchMedia('(min-width: 1536px)').matches, [])
   const sz = useMemo(() => ({
@@ -91,6 +135,9 @@ export default function GameBoard() {
   const aiGlow = '0 0 0 2px rgba(248,113,113,0.7), 0 0 20px rgba(248,113,113,0.25)'
   const playerGlow = '0 0 0 2px rgba(147,197,253,0.7), 0 0 20px rgba(147,197,253,0.25)'
 
+  // F4: month to highlight on field — hover preview takes priority over selection
+  const highlightMonth: number | null = hoverMonth ?? selectedHandCard?.month ?? null
+
   return (
     <div
       className="min-h-screen text-white flex flex-col select-none"
@@ -108,48 +155,52 @@ export default function GameBoard() {
         {/* BOARD */}
         <div className="flex-1 flex flex-col gap-2.5 min-w-0">
 
-          {/* AI row */}
+          {/* AI row — F2: compact strip saves ~150px vs full 2-row grid */}
           <motion.div
-            className="rounded-2xl border border-white/6 bg-white/3 p-3"
+            className="rounded-2xl border border-white/6 bg-white/3 px-3 py-2.5 relative overflow-hidden"
             animate={{ boxShadow: isAI ? aiGlow : 'none', opacity: isPlayerTurn ? 0.4 : 1 }}
             transition={{ duration: 0.4 }}
           >
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-red-400/90 font-bold text-sm">🤖 {t('aiLabel')}</span>
-                {isAI && (
-                  <span className="text-yellow-300/80 text-xs animate-pulse">{t('aiThinks')}</span>
-                )}
-              </div>
-              <ScorePanel
-                score={g.aiScore}
-                breakdown={g.aiBreakdown}
-                label={t('score')}
-                accent="text-red-300"
+            {/* F5: active-turn top stripe */}
+            {isAI && (
+              <motion.div
+                className="absolute top-0 left-0 right-0 h-0.5 bg-red-400"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                style={{ transformOrigin: 'left' }}
+                transition={{ duration: 0.35 }}
               />
-            </div>
-            <div className="flex gap-1.5 flex-wrap min-h-[3rem] items-center">
-              <AnimatePresence>
-                {(aiRevealCard ? g.aiHand.slice(0, -1) : g.aiHand).map((_, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ scale: 0.7, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.7, opacity: 0, y: -16 }}
-                    transition={{ type: 'spring', stiffness: 350, damping: 22 }}
-                  >
-                    <CardSVG card={{ id: `back_${i}`, month: 0 }} faceDown size={sz.ai} />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {/* Flip reveal: face-down → face-up, then layoutId flies it to the field */}
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-red-400/90 font-bold text-sm flex-shrink-0">🤖 {t('aiLabel')}</span>
+              {/* F5: bounce instead of pulse — perceptible at any screen brightness */}
+              {isAI && (
+                <span className="text-yellow-300/90 text-xs animate-bounce">{t('aiThinks')}</span>
+              )}
+              {/* Compact face-down strip */}
+              <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
+                <AnimatePresence>
+                  {(aiRevealCard ? g.aiHand.slice(0, -1) : g.aiHand).map((_, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.5, opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 24 }}
+                      style={{ flexShrink: 0 }}
+                    >
+                      <CardSVG card={{ id: `back_${i}`, month: 0 }} faceDown size={22} />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {!g.aiHand.length && !aiRevealCard && <span className="text-slate-700 text-xs">–</span>}
+              </div>
+              {/* Reveal card: stays at full size for the flip animation */}
               {aiRevealCard && (
                 <motion.div
                   layoutId={`card-${aiRevealCard.id}`}
-                  style={{ position: 'relative', width: sz.ai, height: Math.round(sz.ai * 1.52) }}
+                  style={{ position: 'relative', width: sz.ai, height: Math.round(sz.ai * 1.52), flexShrink: 0 }}
                 >
-                  {/* Back face — scaleX squishes to 0 over first half */}
                   <motion.div
                     style={{ position: 'absolute', transformOrigin: 'center' }}
                     animate={{ scaleX: [1, 0, 0] }}
@@ -157,7 +208,6 @@ export default function GameBoard() {
                   >
                     <CardSVG card={{ id: 'back_reveal', month: 0 }} faceDown size={sz.ai} />
                   </motion.div>
-                  {/* Front face — scaleX expands from 0 over second half */}
                   <motion.div
                     style={{ position: 'absolute', transformOrigin: 'center' }}
                     animate={{ scaleX: [0, 0, 1] }}
@@ -167,8 +217,19 @@ export default function GameBoard() {
                   </motion.div>
                 </motion.div>
               )}
-
-              {!g.aiHand.length && !aiRevealCard && <span className="text-slate-700 text-xs">–</span>}
+              {/* F3: capture flash ring on AI score */}
+              <motion.div
+                animate={captureFlash === 'ai' ? { boxShadow: `0 0 0 3px ${CAPTURE_FLASH_COLOR}` } : { boxShadow: '0 0 0 0px transparent' }}
+                transition={{ duration: 0.15 }}
+                className="rounded-xl"
+              >
+                <ScorePanel
+                  score={g.aiScore}
+                  breakdown={g.aiBreakdown}
+                  label={t('score')}
+                  accent="text-red-300"
+                />
+              </motion.div>
             </div>
           </motion.div>
 
@@ -178,25 +239,29 @@ export default function GameBoard() {
               <span className="text-emerald-500/80 text-sm font-semibold">🍀 {t('field')}</span>
             </div>
             <div className="flex gap-2 min-h-[5rem] items-center">
-              {/* Field cards */}
+              {/* Field cards — F4: highlight months matching selected/hovered hand card */}
               <div className="flex gap-2 flex-wrap flex-1 items-center">
                 <AnimatePresence mode="popLayout">
                   {g.field.length === 0 ? (
                     <span className="text-slate-700 text-sm italic">–</span>
                   ) : (
-                    g.field.map(c => (
-                      <motion.div
-                        key={c.id}
-                        layoutId={`card-${c.id}`}
-                        layout
-                        initial={{ scale: 0.6, opacity: 0, y: -20 }}
-                        animate={{ scale: 1, opacity: 1, y: 0 }}
-                        exit={{ scale: 1.2, opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                      >
-                        <CardSVG card={c} size={sz.field} />
-                      </motion.div>
-                    ))
+                    g.field.map(c => {
+                      const isMatch = highlightMonth !== null && c.month === highlightMonth
+                      const isDimmed = highlightMonth !== null && c.month !== highlightMonth
+                      return (
+                        <motion.div
+                          key={c.id}
+                          layoutId={`card-${c.id}`}
+                          layout
+                          initial={{ scale: 0.6, opacity: 0, y: -20 }}
+                          animate={{ scale: isMatch ? 1.08 : 1, opacity: isDimmed ? 0.35 : 1, y: isMatch ? -4 : 0 }}
+                          exit={{ scale: 1.2, opacity: 0 }}
+                          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                        >
+                          <CardSVG card={c} size={sz.field} highlighted={isMatch} />
+                        </motion.div>
+                      )
+                    })
                   )}
                 </AnimatePresence>
               </div>
@@ -287,58 +352,73 @@ export default function GameBoard() {
             </div>
           </div>
 
-          {/* Poktan declaration */}
-          {canPoktan && g.pendingPoktan && (
-            <div className="rounded-2xl border-2 border-orange-500/40 bg-orange-950/30 p-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-orange-300 font-black text-sm mb-0.5">💣 폭탄 Poktan!</p>
-                  <p className="text-orange-200/60 text-xs">{t('poktanDesc')}</p>
+          {/* Poktan declaration — F6: compact + slide entrance */}
+          <AnimatePresence>
+            {canPoktan && g.pendingPoktan && (
+              <motion.div
+                initial={{ opacity: 0, y: -12, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -8, height: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                className="rounded-2xl border-2 border-orange-500/40 bg-orange-950/30 overflow-hidden"
+              >
+                <div className="flex items-center gap-3 p-2.5 px-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-orange-300 font-black text-sm">💣 폭탄 Poktan!</p>
+                    <p className="text-orange-200/50 text-xs truncate">{t('poktanDesc')}</p>
+                  </div>
+                  <div className="flex gap-1 items-center flex-shrink-0">
+                    {[...g.pendingPoktan.handCards, g.pendingPoktan.fieldCard].map((c, i) => (
+                      <div key={c.id} className="relative">
+                        <CardSVG card={c} size={36} />
+                        {i === g.pendingPoktan!.handCards.length && (
+                          <span className="absolute -top-1 -right-1 text-[8px] bg-orange-500 text-white rounded-full px-1 font-bold leading-4">F</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={declarePoktan}
+                    className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all flex-shrink-0"
+                  >
+                    💣 Poktan!
+                  </button>
                 </div>
-                <div className="flex gap-1.5 items-center">
-                  {[...g.pendingPoktan.handCards, g.pendingPoktan.fieldCard].map((c, i) => (
-                    <div key={c.id} className="relative">
-                      <CardSVG card={c} size={46} />
-                      {i === g.pendingPoktan!.handCards.length && (
-                        <span className="absolute -top-1 -right-1 text-[9px] bg-orange-500 text-white rounded-full px-1 font-bold leading-4">field</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={declarePoktan}
-                  className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all"
-                >
-                  💣 Poktan!
-                </button>
-              </div>
-            </div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Shake declaration — one banner per qualifying month */}
-          {canShake && g.pendingShake.map(shake => (
-            <div key={shake.handCards[0].month} className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 p-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-purple-300 font-black text-sm mb-0.5">🫨 흔들기 Shake!</p>
-                  <p className="text-purple-200/60 text-xs">{t('shakeDesc')}</p>
+          {/* Shake declaration — F6: compact + slide entrance */}
+          <AnimatePresence>
+            {canShake && g.pendingShake.map(shake => (
+              <motion.div
+                key={shake.handCards[0].month}
+                initial={{ opacity: 0, y: -12, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -8, height: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                className="rounded-2xl border-2 border-purple-500/40 bg-purple-950/30 overflow-hidden"
+              >
+                <div className="flex items-center gap-3 p-2.5 px-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-purple-300 font-black text-sm">🫨 흔들기 Shake!</p>
+                    <p className="text-purple-200/50 text-xs truncate">{t('shakeDesc')}</p>
+                  </div>
+                  <div className="flex gap-1 items-center flex-shrink-0">
+                    {shake.handCards.map(c => (
+                      <CardSVG key={c.id} card={c} size={36} />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => declareShake(shake)}
+                    className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-3 py-1.5 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all flex-shrink-0"
+                  >
+                    🫨 Shake!
+                  </button>
                 </div>
-                <div className="flex gap-1.5 items-center">
-                  {shake.handCards.map(c => (
-                    <div key={c.id}>
-                      <CardSVG card={c} size={46} />
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => declareShake(shake)}
-                  className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-purple-900/40 transition-all"
-                >
-                  🫨 Shake!
-                </button>
-              </div>
-            </div>
-          ))}
+              </motion.div>
+            ))}
+          </AnimatePresence>
 
           {/* Nagari multiplier active indicator */}
           {g.nagariMultiplier > 1 && !isOver && (
@@ -386,51 +466,76 @@ export default function GameBoard() {
             </div>
           )}
 
-          {/* Player hand */}
+          {/* Player hand — click to board background clears selection */}
           <motion.div
-            className="rounded-2xl border border-white/6 bg-white/3 p-3"
+            className="rounded-2xl border border-white/6 bg-white/3 p-3 relative overflow-hidden"
             animate={{ boxShadow: isPlayerTurn ? playerGlow : 'none', opacity: isAI ? 0.4 : 1 }}
             transition={{ duration: 0.4 }}
+            onClick={(e) => { if (e.currentTarget === e.target) setSelectedHandCard(null) }}
           >
+            {/* F5: active-turn top stripe */}
+            {isPlayerTurn && (
+              <motion.div
+                className="absolute top-0 left-0 right-0 h-0.5 bg-blue-400"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                style={{ transformOrigin: 'left' }}
+                transition={{ duration: 0.35 }}
+              />
+            )}
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-blue-300/90 font-bold text-sm">👤 {t('yourHand')}</span>
                 {isPlayer && (
                   <span className="bg-blue-500/15 border border-blue-500/30 text-blue-300/80 text-xs px-2 py-0.5 rounded-full">
-                    {t('selectHint')}
+                    {selectedHandCard ? t('tapAgainToPlay') : t('selectHint')}
                   </span>
                 )}
               </div>
-              <ScorePanel
-                score={g.playerScore}
-                breakdown={g.playerBreakdown}
-                label={t('score')}
-                accent="text-blue-300"
-              />
+              {/* F3: capture flash ring on player score */}
+              <motion.div
+                animate={captureFlash === 'player' ? { boxShadow: `0 0 0 3px ${CAPTURE_FLASH_COLOR}` } : { boxShadow: '0 0 0 0px transparent' }}
+                transition={{ duration: 0.15 }}
+                className="rounded-xl"
+              >
+                <ScorePanel
+                  score={g.playerScore}
+                  breakdown={g.playerBreakdown}
+                  label={t('score')}
+                  accent="text-blue-300"
+                />
+              </motion.div>
             </div>
             <div className="flex gap-2 flex-wrap min-h-[4rem] items-end">
               <AnimatePresence mode="popLayout">
-                {g.playerHand.map(c => (
-                  <motion.div
-                    key={c.id}
-                    layoutId={`card-${c.id}`}
-                    layout
-                    initial={{ scale: 0.7, opacity: 0, y: 16 }}
-                    animate={{ scale: 1, opacity: 1, y: 0 }}
-                    exit={{ scale: 0.8, opacity: 0, y: -20 }}
-                    whileHover={isPlayer ? { scale: 1.12, y: -10 } : undefined}
-                    whileTap={isPlayer ? { scale: 0.95 } : undefined}
-                    transition={{ type: 'spring', stiffness: 350, damping: 22 }}
-                    style={{ cursor: isPlayer ? 'pointer' : 'default' }}
-                  >
-                    <CardSVG
-                      card={c}
-                      size={sz.hand}
-                      onClick={isPlayer ? () => handlePlayCard(c) : null}
-                      dimmed={!isPlayer && !isChoose}
-                    />
-                  </motion.div>
-                ))}
+                {g.playerHand.map(c => {
+                  const isSelected = selectedHandCard?.id === c.id
+                  const isHandDimmed = (!isPlayer && !isChoose) || (highlightMonth !== null && !isSelected && c.month !== highlightMonth)
+                  return (
+                    <motion.div
+                      key={c.id}
+                      layoutId={`card-${c.id}`}
+                      layout
+                      initial={{ scale: 0.7, opacity: 0, y: 16 }}
+                      animate={{ scale: 1, opacity: isHandDimmed ? 0.4 : 1, y: 0 }}
+                      exit={{ scale: 0.8, opacity: 0, y: -20 }}
+                      whileHover={isPlayer ? { scale: 1.1, y: -8 } : undefined}
+                      whileTap={isPlayer ? { scale: 0.95 } : undefined}
+                      onHoverStart={() => { if (isPlayer) setHoverMonth(c.month) }}
+                      onHoverEnd={() => setHoverMonth(null)}
+                      transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+                      style={{ cursor: isPlayer ? 'pointer' : 'default' }}
+                    >
+                      <CardSVG
+                        card={c}
+                        size={sz.hand}
+                        onClick={isPlayer ? () => handleCardTap(c) : null}
+                        selected={isSelected}
+                        dimmed={false}
+                      />
+                    </motion.div>
+                  )
+                })}
               </AnimatePresence>
               {!g.playerHand.length && <span className="text-slate-700 text-xs">–</span>}
             </div>
@@ -492,6 +597,19 @@ export default function GameBoard() {
               </button>
             </div>
           )}
+
+          {/* F1: ExplainerPanel inline — the core learning feature, now above fold on mobile */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={g.lastExp ? g.history.length : 'empty'}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+            >
+              <ExplainerPanel exp={g.lastExp} />
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* SIDEBAR */}
@@ -541,8 +659,6 @@ export default function GameBoard() {
               </div>
             )}
           </div>
-
-          <ExplainerPanel exp={g.lastExp} />
 
           {g.history.length > 0 && (
             <div className="rounded-2xl border border-white/6 bg-white/3 p-3">

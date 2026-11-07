@@ -86,12 +86,12 @@ export default function CardSVG({
         position: 'absolute',
         top: size * 0.05,
         left: size * 0.07,
-        fontSize: size * 0.16,
-        color: 'rgba(255,255,255,0.75)',
+        fontSize: Math.max(10, size * 0.19),
+        color: 'rgba(255,255,255,0.85)',
         fontFamily: 'monospace',
         fontWeight: 'bold',
         lineHeight: 1,
-        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+        textShadow: '0 1px 4px rgba(0,0,0,0.95)',
       }}>
         {month}
       </div>
@@ -104,13 +104,13 @@ export default function CardSVG({
         right: 0,
         background: bs.bg,
         color: bs.fg,
-        fontSize: size * 0.145,
+        fontSize: Math.max(11, size * 0.19),
         fontWeight: 'bold',
         textAlign: 'center',
-        padding: `${Math.round(size * 0.05)}px 0`,
+        padding: `${Math.round(size * 0.06)}px 0`,
         fontFamily: "'Noto Sans KR', monospace",
         lineHeight: 1,
-        opacity: 0.93,
+        opacity: 0.95,
       }}>
         {v?.label}
       </div>
