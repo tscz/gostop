@@ -3,14 +3,15 @@ import { MONTHS } from './cards'
 import type { Card, CardType } from './cards'
 import type { ScoreBreakdown, MoveExplanation } from './gameState'
 
-function typeTag(type: CardType): string {
-  switch (type) {
-    case 'bright':      return '(광) '
-    case 'animal':      return '(고) '
-    case 'ribbon':      return '(띠) '
-    case 'double_junk': return '(쌍피) '
-    case 'junk':        return '(피) '
+function typeName(type: CardType, t: (k: string) => string): string {
+  const keys: Record<CardType, string> = {
+    bright:      'typeBright',
+    animal:      'typeAnimal',
+    ribbon:      'typeRibbon',
+    double_junk: 'typeDoubleJunk',
+    junk:        'typeJunk',
   }
+  return t(keys[type])
 }
 
 const GOSTOP_THRESHOLD = 7
@@ -25,7 +26,7 @@ export interface BuildExplanationParams {
   breakdown: ScoreBreakdown[]
   prevBreakdown: ScoreBreakdown[]
   special: string | null
-  // i18next t() function
+  who: 'player' | 'ai'
   t: (key: string) => string
 }
 
@@ -39,63 +40,105 @@ export function buildExplanation({
   breakdown,
   prevBreakdown,
   special,
+  who,
   t,
-}: BuildExplanationParams): Omit<MoveExplanation, 'who'> {
+}: BuildExplanationParams): MoveExplanation {
   const lines: string[] = []
   let quality: MoveExplanation['quality'] = 'neutral'
+  const isAI = who === 'ai'
 
+  const monthName = MONTHS[played.month - 1].ko
+  const playedType = typeName(played.type, t)
+
+  // ── Line 1: The play ─────────────────────────────────────────
   if (handMatches.length > 0) {
     const gain = cardValue(played) + handMatches.reduce((s, c) => s + cardValue(c), 0)
     quality = gain >= 50 ? 'excellent' : gain >= 20 ? 'good' : 'ok'
-    lines.push(`✅ ${t('captured')}: ${MONTHS[played.month - 1].ko} ${typeTag(played.type)}(${handMatches.length} ${t('matchFound')})`)
+
+    if (isAI) {
+      lines.push(t('coachAiCaptured').replace('{{month}}', monthName).replace('{{type}}', playedType))
+    } else if (quality === 'excellent') {
+      lines.push(t('coachYouCapturedExcellent').replace('{{month}}', monthName).replace('{{type}}', playedType))
+    } else {
+      lines.push(t('coachYouCaptured').replace('{{month}}', monthName).replace('{{type}}', playedType))
+    }
   } else {
     quality = 'poor'
-    lines.push(`⚠️ ${t('noMatch')} — ${t('cardDiscarded')}`)
-  }
-
-  if (drawn) {
-    if (special === 'ppeok') {
-      // ppeok: drawn card stays on field with 2 others — nothing captured
-      lines.push(`🔒 뻑 Ppeok! ${drawn.month}월 → ${t('ppeokDesc')}`)
-      quality = 'ok'
-    } else if (drawnMatches.length > 0) {
-      lines.push(`🎴 ${t('drew')} ${drawn.month}월 ${typeTag(drawn.type)}→ ${t('capturedDraw')}!`)
+    if (isAI) {
+      lines.push(t('coachAiDiscarded').replace('{{month}}', monthName))
     } else {
-      lines.push(`🎴 ${t('drew')} ${drawn.month}월 ${typeTag(drawn.type)}→ ${t('addedToField')}`)
+      lines.push(t('coachYouDiscarded').replace('{{month}}', monthName))
     }
   }
 
-  if (special === 'chok')   { lines.push(`⚡ 촉 Chok! ${t('chokDesc')}`);         quality = 'good' }
-  if (special === 'ttadak') { lines.push(`💥 따닥 Ttadak! ${t('ttadakDesc')}`);   quality = 'excellent' }
-  if (special === 'sassak') { lines.push(`🌪️ 싹쓸이 Sa-ssak! ${t('sassakDesc')}`); quality = 'excellent' }
+  // ── Line 2: Drawn card ───────────────────────────────────────
+  if (drawn) {
+    const drawnMonth = MONTHS[drawn.month - 1].ko
+    const drawnType = typeName(drawn.type, t)
 
+    if (special === 'ppeok') {
+      lines.push(t('coachPpeok').replace('{{month}}', drawnMonth))
+    } else if (drawnMatches.length > 0) {
+      if (isAI) {
+        lines.push(t('coachAiDrewMatch').replace('{{month}}', drawnMonth).replace('{{type}}', drawnType))
+      } else {
+        lines.push(t('coachDrewMatch').replace('{{month}}', drawnMonth).replace('{{type}}', drawnType))
+        if (quality === 'ok') quality = 'good'
+      }
+    } else {
+      if (isAI) {
+        lines.push(t('coachAiDrewField').replace('{{month}}', drawnMonth))
+      } else {
+        lines.push(t('coachDrewField').replace('{{month}}', drawnMonth).replace('{{type}}', drawnType))
+      }
+    }
+  }
+
+  // ── Special moves ────────────────────────────────────────────
+  if (special === 'chok') {
+    lines.push(isAI ? t('coachAiChok') : t('coachChok'))
+    if (quality === 'ok') quality = 'good'
+  }
+  if (special === 'ttadak') {
+    lines.push(isAI ? t('coachAiTtadak') : t('coachTtadak'))
+    quality = 'excellent'
+  }
+  if (special === 'sassak') {
+    lines.push(isAI ? t('coachAiSassak') : t('coachSassak'))
+    quality = 'excellent'
+  }
+
+  // ── Score line ───────────────────────────────────────────────
   const delta = newPts - prevPts
   if (delta > 0) {
-    if (newPts < GOSTOP_THRESHOLD) {
-      const rem = GOSTOP_THRESHOLD - newPts
-      lines.push(`🎉 +${delta}${t('pts')}! → ${newPts}${t('pts')} (${rem} ${t('toStop')})`)
+    if (isAI) {
+      lines.push(t('coachAiScore').replace('{{delta}}', String(delta)).replace('{{total}}', String(newPts)))
+    } else if (newPts >= GOSTOP_THRESHOLD) {
+      lines.push(t('coachScoreCanStop').replace('{{delta}}', String(delta)).replace('{{total}}', String(newPts)))
     } else {
-      lines.push(`🎉 +${delta}${t('pts')}! → ${newPts}${t('pts')}`)
+      const rem = GOSTOP_THRESHOLD - newPts
+      lines.push(
+        t('coachScoreProgress')
+          .replace('{{delta}}', String(delta))
+          .replace('{{total}}', String(newPts))
+          .replace('{{rem}}', String(rem)),
+      )
     }
   }
 
+  // ── New scoring categories ───────────────────────────────────
   const prevKeys = new Set((prevBreakdown || []).map(b => b.key))
   for (const b of breakdown) {
     if (!prevKeys.has(b.key)) {
-      lines.push(`🏆 ${b.emoji} ${b.label} +${b.pts}${t('pts')}`)
+      lines.push(
+        t('coachNewCategory')
+          .replace('{{emoji}}', b.emoji)
+          .replace('{{label}}', b.label)
+          .replace('{{pts}}', String(b.pts)),
+      )
       quality = 'excellent'
     }
   }
-  if (newPts >= GOSTOP_THRESHOLD && prevPts < GOSTOP_THRESHOLD) lines.push(`⚡ ${t('canGoStop')}`)
 
-  const tips: Record<string, string> = {
-    excellent: t('tipExcellent'),
-    good: t('tipGood'),
-    ok: t('tipOk'),
-    poor: t('tipPoor'),
-    neutral: '',
-  }
-  if (tips[quality]) lines.push(`💡 ${tips[quality]}`)
-
-  return { lines, quality, delta, newPts }
+  return { lines, quality, delta, newPts, who }
 }
