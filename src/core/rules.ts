@@ -1,6 +1,6 @@
 import { CardType } from './cards'
 import { GamePhase } from './gameState'
-import { calcScore, finaliseScore, cardValue } from './scoring'
+import { calcScore, finaliseScore, applyLoserPenalties, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
 import { deal } from './deck'
 import type { Card } from './cards'
@@ -212,15 +212,38 @@ export function applyPoktan(
     nextPlayerHand.length === 0
   const rawPlayerPts = isAI ? state.playerScore : newPts
   const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
-  const { finalScore: finalPlayerPts, breakdown: finalPlayerBD } = gameOver
+  const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
     ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
     : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
-  const finalAiPts = isAI ? newPts : state.aiScore
+  const baseAiPts = isAI ? newPts : state.aiScore
+  const baseAiBD = isAI ? breakdown : state.aiBreakdown
+  let finalPlayerPts = baseFinalPlayerPts
+  let finalPlayerBD = baseFinalPlayerBD
+  let finalAiPts = baseAiPts
+  let finalAiBD = baseAiBD
   let phase: GameState['phase'] = GamePhase.SELECT
   let winner: GameState['winner'] = null
   if (gameOver) {
     phase = GamePhase.GAME_OVER
-    winner = finalPlayerPts > finalAiPts ? 'player' : finalAiPts > finalPlayerPts ? 'ai' : 'draw'
+    if (baseFinalPlayerPts > baseAiPts) {
+      winner = 'player'
+      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyLoserPenalties(
+        baseFinalPlayerPts, baseFinalPlayerBD,
+        isAI ? state.playerCaptured : captured,
+        isAI ? captured : state.aiCaptured,
+        0, // AI never calls GO
+      ))
+    } else if (baseAiPts > baseFinalPlayerPts) {
+      winner = 'ai'
+      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyLoserPenalties(
+        baseAiPts, baseAiBD,
+        isAI ? captured : state.aiCaptured,
+        isAI ? state.playerCaptured : captured,
+        state.goCount,
+      ))
+    } else {
+      winner = 'draw'
+    }
   }
 
   // Detect Poktan + Shake for the next player (only if game isn't over)
@@ -239,7 +262,7 @@ export function applyPoktan(
     playerScore: finalPlayerPts,
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
-    aiBreakdown: isAI ? breakdown : state.aiBreakdown,
+    aiBreakdown: finalAiBD,
     turn: isAI ? 'player' : 'ai',
     phase,
     lastExp: exp,
@@ -384,14 +407,36 @@ export function applyTurn(
   // Apply GO + shake multipliers to player score at natural game end
   const rawPlayerPts = isAI ? state.playerScore : newPts
   const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
-  const { finalScore: finalPlayerPts, breakdown: finalPlayerBD } = gameOver
+  const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
     ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
     : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
-  const finalAiPts = isAI ? newPts : state.aiScore
+  const baseAiPts = isAI ? newPts : state.aiScore
+  const baseAiBD = isAI ? breakdown : state.aiBreakdown
+  let finalPlayerPts = baseFinalPlayerPts
+  let finalPlayerBD = baseFinalPlayerBD
+  let finalAiPts = baseAiPts
+  let finalAiBD = baseAiBD
   if (gameOver) {
     phase = GamePhase.GAME_OVER
-    winner =
-      finalPlayerPts > finalAiPts ? 'player' : finalAiPts > finalPlayerPts ? 'ai' : 'draw'
+    if (baseFinalPlayerPts > baseAiPts) {
+      winner = 'player'
+      ;({ finalScore: finalPlayerPts, breakdown: finalPlayerBD } = applyLoserPenalties(
+        baseFinalPlayerPts, baseFinalPlayerBD,
+        isAI ? state.playerCaptured : captured,
+        isAI ? captured : state.aiCaptured,
+        0, // AI never calls GO
+      ))
+    } else if (baseAiPts > baseFinalPlayerPts) {
+      winner = 'ai'
+      ;({ finalScore: finalAiPts, breakdown: finalAiBD } = applyLoserPenalties(
+        baseAiPts, baseAiBD,
+        isAI ? captured : state.aiCaptured,
+        isAI ? state.playerCaptured : captured,
+        state.goCount,
+      ))
+    } else {
+      winner = 'draw'
+    }
   }
 
   // Detect Poktan + Shake for the next player (only if game isn't over)
@@ -412,7 +457,7 @@ export function applyTurn(
     playerScore: finalPlayerPts,
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
-    aiBreakdown: isAI ? breakdown : state.aiBreakdown,
+    aiBreakdown: finalAiBD,
     turn: isAI ? 'player' : 'ai',
     phase,
     lastExp: exp,

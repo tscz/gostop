@@ -123,6 +123,53 @@ export function finaliseScore(
 }
 
 // ═══════════════════════════════════════════════════════════════
+// LOSER PENALTIES — 고박 · 광박 · 피박
+// Applied to the WINNER's score after all other multipliers.
+// Each condition doubles the winner's score, and they stack.
+//
+// 고박 (go bak):   loser previously called GO
+// 광박 (gwang bak): winner holds ≥1 bright, loser holds none
+// 피박 (pi bak):   loser's pi count < 6
+// ═══════════════════════════════════════════════════════════════
+export function applyLoserPenalties(
+  winnerScore: number,
+  winnerBreakdown: ScoreBreakdown[],
+  winnerCaptured: Card[],
+  loserCaptured: Card[],
+  loserGoCount: number,
+): { finalScore: number; breakdown: ScoreBreakdown[] } {
+  let score = winnerScore
+  let bd = winnerBreakdown
+
+  if (loserGoCount > 0) {
+    const prev = score
+    score *= 2
+    bd = [...bd, { key: 'gobak', emoji: '🔄', label: '고박 Loser called GO ×2', pts: score - prev }]
+  }
+
+  const winnerBrights = winnerCaptured.filter(c => c.type === CardType.BRIGHT)
+  const loserBrights = loserCaptured.filter(c => c.type === CardType.BRIGHT)
+  if (winnerBrights.length > 0 && loserBrights.length === 0) {
+    const prev = score
+    score *= 2
+    bd = [...bd, { key: 'gwangbak', emoji: '🌟', label: '광박 Loser has no Brights ×2', pts: score - prev }]
+  }
+
+  const loserPiCount = loserCaptured.reduce((s, c) => {
+    if (c.type === CardType.DOUBLE_JUNK || c.countsAsDoublePi) return s + 2
+    if (c.type === CardType.JUNK) return s + 1
+    return s
+  }, 0)
+  if (loserPiCount < 6) {
+    const prev = score
+    score *= 2
+    bd = [...bd, { key: 'pibak', emoji: '🃏', label: '피박 Loser has fewer than 6 pi ×2', pts: score - prev }]
+  }
+
+  return { finalScore: score, breakdown: bd }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CARD VALUE (for AI scoring)
 // ═══════════════════════════════════════════════════════════════
 export function cardValue(card: Card | null | undefined): number {

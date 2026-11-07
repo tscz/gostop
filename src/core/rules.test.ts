@@ -213,6 +213,7 @@ describe('applyTurn — state transitions', () => {
     // applyGoMultiplier applies to calcScore(captured), not state.playerScore.
     // Give player godori cards (5pts raw) in captured, then trigger game over.
     // With goCount=1: finalScore = 5 + 1 = 6
+    // AI gets 6 pi + 1 bright so no loser penalties fire.
     const jan1 = c(1)
     const state = makeState({
       playerHand: [jan1],
@@ -221,6 +222,7 @@ describe('applyTurn — state transitions', () => {
       drawPile: [],
       goCount: 1,
       playerCaptured: [c(5), c(13), c(30)], // godori = 5 raw pts
+      aiCaptured: [c(3), c(4), c(7), c(8), c(11), c(12), c(41)], // 6 pi + bright → no penalties
     })
     const next = applyTurn(state, jan1, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
@@ -662,6 +664,7 @@ describe('applyShake', () => {
   it('shake multiplier doubles player score at game end', () => {
     // Player holds 3 non-rain brights in captured (samgwang = 3 pts).
     // With shakeCount=1 the final score should be 3 × 2 = 6.
+    // AI gets 6 pi + 1 bright so no loser penalties fire.
     const feb5 = c(5) // Feb animal — played last to trigger game end
     const state = makeState({
       playerHand: [feb5],
@@ -670,6 +673,7 @@ describe('applyShake', () => {
       field: [],
       drawPile: [],
       shakeCount: 1,
+      aiCaptured: [c(3), c(4), c(7), c(8), c(11), c(12), c(41)], // 6 pi + bright → no penalties
     })
     const next = applyTurn(state, feb5, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
@@ -678,6 +682,7 @@ describe('applyShake', () => {
 
   it('playerBreakdown includes shake_bonus entry at natural game end', () => {
     // Ensures ScorePanel total matches breakdown sum when game ends naturally.
+    // AI gets 6 pi + 1 bright so no loser penalties fire.
     const feb5 = c(5)
     const state = makeState({
       playerHand: [feb5],
@@ -686,6 +691,7 @@ describe('applyShake', () => {
       field: [],
       drawPile: [],
       shakeCount: 1,
+      aiCaptured: [c(3), c(4), c(7), c(8), c(11), c(12), c(41)], // 6 pi + bright → no penalties
     })
     const next = applyTurn(state, feb5, false, t)
     expect(next.playerScore).toBe(6)
@@ -697,6 +703,7 @@ describe('applyShake', () => {
   })
 
   it('playerBreakdown includes go_bonus and shake_bonus at natural game end', () => {
+    // AI gets 6 pi + 1 bright so no loser penalties fire.
     const feb5 = c(5)
     const state = makeState({
       playerHand: [feb5],
@@ -706,6 +713,7 @@ describe('applyShake', () => {
       drawPile: [],
       goCount: 1,   // +1 bonus → 4 pts
       shakeCount: 1, // ×2 → 8 pts
+      aiCaptured: [c(3), c(4), c(7), c(8), c(11), c(12), c(41)], // 6 pi + bright → no penalties
     })
     const next = applyTurn(state, feb5, false, t)
     expect(next.phase).toBe(GamePhase.GAME_OVER)
