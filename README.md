@@ -1,12 +1,30 @@
+<div align="center">
+
+<img src="public/assets/cards/Hwatu_January_Hikari.svg" width="52" title="January – Crane"><img src="public/assets/cards/Hwatu_March_Hikari.svg" width="52" title="March – Curtain"><img src="public/assets/cards/Hwatu_August_Hikari.svg" width="52" title="August – Full Moon"><img src="public/assets/cards/Hwatu_November_Hikari.svg" width="52" title="November – Phoenix"><img src="public/assets/cards/Hwatu_December_Hikari.svg" width="52" title="December – Rain Man">
+
 # 고스톱 Trainer
 
-<img src="public/assets/cards/Hwatu_January_Hikari.svg" width="60" title="January – Crane"><img src="public/assets/cards/Hwatu_March_Hikari.svg" width="60" title="March – Curtain"><img src="public/assets/cards/Hwatu_August_Hikari.svg" width="60" title="August – Full Moon"><img src="public/assets/cards/Hwatu_November_Hikari.svg" width="60" title="November – Phoenix"><img src="public/assets/cards/Hwatu_December_Hikari.svg" width="60" title="December – Rain Man"><img src="public/assets/cards/Hwatu_February_Tane.svg" width="60" title="February – Nightingale"><img src="public/assets/cards/Hwatu_April_Tane.svg" width="60" title="April – Cuckoo"><img src="public/assets/cards/Hwatu_August_Tane.svg" width="60" title="August – Geese">
+Browser-based **Go-Stop (고스톱)** trainer with a rule-based AI opponent,  
+animated scoring breakdowns, and full 🇩🇪 / 🇺🇸 / 🇰🇷 support.  
+No backend. Runs entirely in the browser — installable as a PWA.
 
-A browser-based **Go-Stop (고스톱)** card game trainer — rule-based AI opponent, animated scoring explanations, and full DE / EN / KO support. Runs entirely in the browser with no backend.
+[![Play Live](https://img.shields.io/badge/▶_Play_Live-tscz.github.io%2Fgostop-4f46e5?style=for-the-badge)](https://tscz.github.io/gostop)
+[![Tests](https://img.shields.io/github/actions/workflow/status/tscz/gostop/build.yml?branch=main&label=tests&style=for-the-badge)](https://github.com/tscz/gostop/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-▶ **[Play it live](https://tscz.github.io/gostop)**
+</div>
 
-Press the **?** button in the top-right corner for in-app rules, scoring combinations, and special rules (available in EN / DE / KO).
+---
+
+## Features
+
+- **Full game rules** — matching, go/stop decisions, all standard yaku
+- **Animated score panel** — highlights 광박, 고박, 피박 and combo breakdowns
+- **Session scoreboard** — tracks wins across multiple rounds
+- **Special rules** — nagari (draw), 광쪽박, post-poktan skip
+- **Loser penalties** — 광박 ×2, 고박 ×2, 피박 ×1 multipliers
+- **Multilingual** — full EN / DE / KO translations, switchable in-app
+- **PWA** — installable on Android; works offline after first visit
 
 ---
 
@@ -17,37 +35,50 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+Open [http://localhost:5173/gostop/](http://localhost:5173/gostop/).  
+Press **?** in the top-right corner for the in-app rules reference.
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server |
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the Vite dev server |
 | `npm run build` | Type-check + production build |
 | `npm run preview` | Preview production build locally |
-| `npm test` | Run unit tests (Vitest) |
+| `npm test` | Run unit tests (Vitest, 149 tests) |
+| `node scripts/gen-icons.cjs` | Regenerate PWA icons from the hwatu SVG |
+
+---
 
 ## Project structure
 
 ```
 src/
-├── core/               # Pure TypeScript game logic (no React)
-├── store/              # Zustand global state
-├── components/         # React UI components
-├── i18n/               # Translation files (de.json, en.json, ko.json)
+├── core/           # Pure TypeScript game logic (no React)
+├── store/          # Zustand global state
+├── components/     # React UI components
+├── i18n/           # Translations — de.json  en.json  ko.json
 ├── App.tsx
 └── main.tsx
+scripts/
+└── gen-icons.cjs   # Renders PWA icons via headless Firefox + Playwright
+public/
+└── assets/cards/   # 48 hwatu SVGs (CC BY-SA 4.0, Marcus Richert)
 ```
-
-## Deployment
-
-Pushing a GitHub Release triggers the `deploy-release.yml` workflow which builds and deploys to the `gh-pages` branch automatically. Every push runs the CI build via `build.yml`.
 
 ---
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Deployment
 
-Hwatu card artwork by **Marcus Richert**, based on Louie Mantia Jr.'s Hanafuda graphics.
-Licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Every push runs CI via `build.yml`.  
+Publishing a **GitHub Release** triggers `deploy-release.yml`, which builds and deploys to the `gh-pages` branch automatically.
+
+---
+
+<div align="center">
+
+Hwatu card artwork by **Marcus Richert**, based on Louie Mantia Jr.'s Hanafuda graphics.  
+Licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).  
 Source: [Wikimedia Commons – Category:SVG Hwatu](https://commons.wikimedia.org/wiki/Category:SVG_Hwatu)
+
+</div>

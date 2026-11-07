@@ -23,7 +23,10 @@ export default function Header({ onHelpOpen }: HeaderProps) {
     <header className="flex items-center gap-3 px-4 py-2.5 border-b border-white/6 bg-black/40 backdrop-blur-lg sticky top-0 z-40">
       <div className="flex-1">
         <h1 className="text-lg font-black tracking-tight leading-none">{t('title')}</h1>
-        <p className="text-white/25 text-[11px] mt-0.5">{t('sub')}</p>
+        <p className="text-white/25 text-[11px] mt-0.5">
+          {t('sub')}
+          <span className="ml-1.5 opacity-50">v{__APP_VERSION__}</span>
+        </p>
       </div>
       {state.goCount > 0 && (
         <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs px-2.5 py-1 rounded-full font-bold">
