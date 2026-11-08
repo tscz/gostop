@@ -37,6 +37,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     poktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier: 1,
+    endReason: null,
     ...overrides,
   }
 }
@@ -876,7 +877,7 @@ describe('QA: post-poktan skip (#8)', () => {
     expect(next.poktanSkipsRemaining).toBe(0)
   })
 
-  it('applyTurn decrements poktanSkipsRemaining on player turn', () => {
+  it('applyTurn keeps poktan skips banked when the player plays a real card', () => {
     const jan1 = c(1), mar9 = c(9)
     const state = makeState({
       playerHand: [jan1],
@@ -886,7 +887,24 @@ describe('QA: post-poktan skip (#8)', () => {
       poktanSkipsRemaining: 2,
     })
     const next = applyTurn(state, jan1, false, t)
-    expect(next.poktanSkipsRemaining).toBe(1)
+    expect(next.poktanSkipsRemaining).toBe(2)
+  })
+
+  it('round continues after AI move when player hand is empty but skips and pile remain', () => {
+    // Regression: skips used to burn on normal plays, ending the round with cards left
+    const feb5 = c(5), mar9 = c(9)
+    const state = makeState({
+      playerHand: [],
+      aiHand: [feb5, mar9],
+      field: [],
+      drawPile: [c(13), c(21), c(25)],
+      poktanSkipsRemaining: 2,
+      turn: 'ai' as const,
+    })
+    const next = applyTurn(state, feb5, true, t)
+    expect(next.phase).toBe(GamePhase.SELECT)
+    expect(next.turn).toBe('player')
+    expect(next.poktanSkipsRemaining).toBe(2)
   })
 
   it('applyTurn does NOT decrement on AI turn', () => {
@@ -973,5 +991,29 @@ describe('QA: nagari (#9)', () => {
     // Breakdown sum should equal total
     const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
     expect(total).toBe(next.playerScore)
+  })
+})
+
+describe('GO/STOP keeps the turn with the player', () => {
+  it('applyTurn reaching 7+ points sets phase GOSTOP with turn=player', () => {
+    // Capturing Aug bird + Aug bright completes godori (5) and 삼광 (3) → 8 pts
+    const state = makeState({
+      playerHand: [c(30), c(3)],
+      aiHand: [c(7), c(8)],
+      field: [c(29)],
+      drawPile: [c(11), c(12)],
+      playerCaptured: [c(5), c(13), c(1), c(9)],
+    })
+    const next = applyTurn(state, c(30), false, t)
+    expect(next.playerScore).toBeGreaterThanOrEqual(7)
+    expect(next.phase).toBe(GamePhase.GOSTOP)
+    expect(next.turn).toBe('player')
+  })
+})
+
+describe('card data', () => {
+  it('November (오동) has no animal card: 광, 피, 피, 쌍피', () => {
+    const nov = DECK.filter(card => card.month === 11).map(card => card.type).sort()
+    expect(nov).toEqual(['bright', 'double_junk', 'junk', 'junk'])
   })
 })

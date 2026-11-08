@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectAiCard } from './ai'
+import { selectAiCard, suggestPlayerCard } from './ai'
 import { GamePhase } from './gameState'
 import { DECK, CardType } from './cards'
 import type { GameState } from './gameState'
@@ -35,6 +35,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     poktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier: 1,
+    endReason: null,
     ...overrides,
   }
 }
@@ -96,5 +97,26 @@ describe('selectAiCard', () => {
     const state = makeState({ aiHand: [jan1, mayJunk], field: [janRibbon] })
     const selected = selectAiCard(state)
     expect(selected.id).toBe(jan1.id)
+  })
+})
+
+describe('suggestPlayerCard', () => {
+  it('prefers the hand card that captures the most valuable field card', () => {
+    // Jan junk can take the Jan bright; Mar junk only matches nothing
+    const state = makeState({ turn: 'player', playerHand: [c(3), c(11)], field: [c(1)] })
+    const s = suggestPlayerCard(state)
+    expect(s?.card.id).toBe(3)
+    expect(s?.target?.id).toBe(1)
+  })
+
+  it('with no match, suggests discarding the least valuable card', () => {
+    const state = makeState({ turn: 'player', playerHand: [c(1), c(3)], field: [c(9)] })
+    const s = suggestPlayerCard(state)
+    expect(s?.card.id).toBe(3)
+    expect(s?.target).toBeNull()
+  })
+
+  it('returns null for an empty hand', () => {
+    expect(suggestPlayerCard(makeState({ turn: 'player' }))).toBeNull()
   })
 })

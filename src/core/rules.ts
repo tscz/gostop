@@ -104,8 +104,8 @@ export function applyShake(
   t: (key: string) => string,
 ): GameState {
   const exp: MoveExplanation = {
-    lines: [`🫨 흔들기 Shake! ${t('shakeDesc')}`, `💡 ${t('tipExcellent')}`],
-    quality: 'excellent',
+    lines: [`👋 ${t('shakeDone')}`],
+    quality: 'good',
     delta: 0,
     newPts: state.playerScore,
     who: 'player',
@@ -166,6 +166,7 @@ export function initState(opts: InitOpts = {}): GameState {
       nagariMultiplier,
       message: instantWin === 'player' ? '💣 4장 폭탄! 즉시 승리!' : '💣 AI 4장 폭탄!',
       winner: instantWin,
+      endReason: 'instant',
     }
   }
 
@@ -196,6 +197,7 @@ export function initState(opts: InitOpts = {}): GameState {
     poktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier,
+    endReason: null,
   }
 }
 
@@ -243,12 +245,11 @@ export function applyPoktan(
   const delta = newPts - prevPts
 
   const expLines: string[] = [
-    `💣 폭탄 Poktan! ${t('poktanDesc')}`,
-    ...(delta > 0 ? [`🎉 +${delta} ${t('pts')}! (${t('total')}: ${newPts})`] : []),
+    `💣 ${t(isAI ? 'poktanDoneAi' : 'poktanDone')}`,
+    ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
     ...breakdown
       .filter(b => !prevBD.some(p => p.key === b.key))
-      .map(b => `🏆 ${b.emoji} ${b.label} +${b.pts}${t('pts')}`),
-    `💡 ${t('tipExcellent')}`,
+      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
   ]
 
   const exp: MoveExplanation = {
@@ -323,6 +324,7 @@ export function applyPoktan(
     pendingShake,
     winner,
     isNagari: isNagariGame,
+    endReason: gameOver ? 'natural' : null,
     message: '',
   }
 }
@@ -493,11 +495,8 @@ export function applyTurn(
   // Only offer shake when it is the player's turn next (AI ignores shake)
   const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField) : []
 
-  // Decrement skip counter on player turns (whether they skipped or played normally)
-  const poktanSkipsRemaining =
-    !isAI && state.poktanSkipsRemaining > 0
-      ? state.poktanSkipsRemaining - 1
-      : state.poktanSkipsRemaining
+  // Skips are only consumed by applySkipTurn — playing a real card keeps them banked
+  const poktanSkipsRemaining = state.poktanSkipsRemaining
 
   return {
     ...state, // scoreAtLastGo carried through via spread
@@ -512,7 +511,8 @@ export function applyTurn(
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
-    turn: isAI ? 'player' : 'ai',
+    // While the player decides GO/STOP the turn stays with them; callGo hands it to the AI
+    turn: isAI || phase === GamePhase.GOSTOP ? 'player' : 'ai',
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -521,6 +521,7 @@ export function applyTurn(
     pendingShake,
     winner,
     isNagari: isNagariGame,
+    endReason: gameOver ? 'natural' : null,
     poktanSkipsRemaining,
   }
 }
@@ -631,7 +632,7 @@ export function applySkipTurn(
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
-    turn: 'ai',
+    turn: phase === GamePhase.GOSTOP ? 'player' : 'ai',
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -640,6 +641,7 @@ export function applySkipTurn(
     pendingShake,
     winner,
     isNagari: isNagariGame,
+    endReason: gameOver ? 'natural' : null,
     poktanSkipsRemaining,
   }
 }

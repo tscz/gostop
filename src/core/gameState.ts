@@ -89,6 +89,8 @@ export interface GameState {
   // #9 — nagari
   isNagari: boolean
   nagariMultiplier: number  // ×1 normally; doubles with each consecutive nagari
+  // Why the round ended — drives the result panel copy
+  endReason: 'stop' | 'aiStop' | 'natural' | 'instant' | null
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -166,6 +166,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           phase: GamePhase.GAME_OVER,
           pendingShake: [],
           winner: ge.winner,
+          endReason: 'stop',
           message:
             prev.goCount > 0 && prev.shakeCount > 0
               ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
@@ -239,6 +240,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           playerScore: ge.finalPlayerPts,
           playerBreakdown: ge.finalPlayerBD,
           pendingShake: [],
+          endReason: 'aiStop',
           message: 'AI: STOP!',
         }
       }
