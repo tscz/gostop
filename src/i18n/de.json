@@ -106,5 +106,6 @@
   "skipRemaining": "übrig",
   "nagari": "나가리 Nagari: Die nächste Runde zählt doppelt!",
   "nagariMultiplier": "Nagari ×{{n}} aktiv",
-  "nagariDraw": "Nagari!"
+  "nagariDraw": "Nagari!",
+  "skipDoneAi": "Die KI nutzt einen Gratis-Zug (nach ihrem Poktan)."
 }

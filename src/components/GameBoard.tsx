@@ -112,7 +112,8 @@ export default function GameBoard() {
   // AI turn effect — sequential: wait for player animation → flip hand card → flip pile card → move
   useEffect(() => {
     if (g.turn === 'ai' && g.phase === GamePhase.SELECT) {
-      const card = g.pendingPoktan ? g.pendingPoktan.handCards[0] : selectAiCard(g)
+      // Empty hand → the AI is taking a post-poktan bonus draw: only the pile flips
+      const card = g.pendingPoktan ? g.pendingPoktan.handCards[0] : g.aiHand.length ? selectAiCard(g) : null
       const top = g.drawPile[0] ?? null
 
       // Step 1: wait for player animation, then flip AI hand card
@@ -199,6 +200,27 @@ export default function GameBoard() {
   }
 
   const handleGo = () => { buzz(30); blip('go'); callGo() }
+
+  // Poktan also flips the pile — show it before resolving, like a normal play
+  const handlePoktan = () => {
+    setSelectedHandCard(null)
+    setHint(null)
+    setDrawnCard(g.drawPile[0] ?? null)
+    drawnCardTimerRef.current = setTimeout(() => {
+      declarePoktan()
+      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
+    }, 650)
+  }
+
+  const handleSkip = () => {
+    setSelectedHandCard(null)
+    setHint(null)
+    setDrawnCard(g.drawPile[0] ?? null)
+    drawnCardTimerRef.current = setTimeout(() => {
+      skipHandCard()
+      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
+    }, 650)
+  }
 
   // Choose-match advice: recommend the more valuable card
   const chooseAdvice = (() => {
@@ -684,7 +706,7 @@ export default function GameBoard() {
                       </div>
                     ))}
                   </div>
-                  <button onClick={declarePoktan} className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-3 py-2 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all flex-shrink-0">
+                  <button onClick={handlePoktan} className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-3 py-2 rounded-xl text-sm shadow-lg shadow-orange-900/40 transition-all flex-shrink-0">
                     💣 Go!
                   </button>
                 </div>
@@ -711,7 +733,7 @@ export default function GameBoard() {
                     <p className="text-cyan-300 font-black text-sm">⏭️ {t('skipAvailable')}</p>
                     <p className="text-cyan-200/70 text-xs leading-snug">{t('skipHandCard')} · {g.poktanSkipsRemaining} {t('skipRemaining')}</p>
                   </div>
-                  <button onClick={skipHandCard} className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-cyan-900/40 transition-all flex-shrink-0">
+                  <button onClick={handleSkip} className="bg-cyan-700 hover:bg-cyan-600 active:scale-95 text-white font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-cyan-900/40 transition-all flex-shrink-0">
                     ⏭️ Skip
                   </button>
                 </div>

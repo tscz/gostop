@@ -33,6 +33,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
     poktanSkipsRemaining: 0,
+    aiPoktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier: 1,
     endReason: null,

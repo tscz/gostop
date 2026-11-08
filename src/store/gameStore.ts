@@ -257,8 +257,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return { state: newState }
       }
 
-      const card = selectAiCard(prev)
-      const newState = applyTurn(prev, card, true, getT())
+      // After its own Poktan the AI may have an empty hand: use a bonus draw
+      const newState = prev.aiHand.length === 0 && prev.aiPoktanSkipsRemaining > 0
+        ? applySkipTurn(prev, getT(), true)
+        : applyTurn(prev, selectAiCard(prev), true, getT())
 
       // AI Go/Stop decision after its turn
       if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {

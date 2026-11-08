@@ -177,7 +177,7 @@ const SUIT_DATA: Array<{
   { m:  8, bright: [29], animal: [30], ribbon: [],   ribbonNote: false, junk: [31, 32], junkNote: [],   djunk: [] },
   { m:  9, bright: [],   animal: null, ribbon: [34], ribbonNote: false, junk: [35, 36], junkNote: [],   djunk: [33] },
   { m: 10, bright: [],   animal: [37], ribbon: [38], ribbonNote: false, junk: [39, 40], junkNote: [],   djunk: [] },
-  { m: 11, bright: [41], animal: [],   ribbon: [],   ribbonNote: false, junk: [42, 43], junkNote: [],   djunk: [44] },
+  { m: 11, bright: [41], animal: [],   ribbon: [],   ribbonNote: false, junk: [42, 44], junkNote: [],   djunk: [43] },
   { m: 12, bright: [45], animal: [46], ribbon: [47], ribbonNote: true,  junk: [],       junkNote: [],   djunk: [48] },
 ]
 

@@ -106,5 +106,6 @@
   "combos": "Combos",
   "noCaptures": "No cards captured yet",
   "tapForDetails": "Tap for details",
-  "close": "Close"
+  "close": "Close",
+  "skipDoneAi": "The AI used a bonus draw (after its Poktan)."
 }
