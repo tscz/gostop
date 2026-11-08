@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import './i18n'
 import { CARD_IMAGE_URL } from './core/cards'
 import GameBoard from './components/GameBoard'
+import TitleScreen from './components/TitleScreen'
 
 const preloadStyle: React.CSSProperties = {
   position: 'absolute',
@@ -11,6 +13,9 @@ const preloadStyle: React.CSSProperties = {
 }
 
 export default function App() {
+  // The board (and with it the AI's first move) only mounts after "Play"
+  const [started, setStarted] = useState(false)
+
   return (
     <>
       {/* Preload all card SVGs so they're cached before they appear in game */}
@@ -19,7 +24,7 @@ export default function App() {
           <img key={url} src={url} alt="" />
         ))}
       </div>
-      <GameBoard />
+      {started ? <GameBoard /> : <TitleScreen onPlay={() => setStarted(true)} />}
     </>
   )
 }

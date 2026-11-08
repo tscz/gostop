@@ -127,5 +127,8 @@
   "bd_gwangbak": "광박 ×2",
   "bd_pibak": "피박 ×2",
   "bd_nagari_bonus": "나가리 ×{{n}}",
-  "bd_bomb": "총통 즉시 승리"
+  "bd_bomb": "총통 즉시 승리",
+  "play": "시작하기",
+  "howToPlay": "게임 방법",
+  "titleTagline": "AI와 대결하며 화투를 배워보세요"
 }
