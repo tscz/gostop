@@ -105,22 +105,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const prev = store.state
       if (prev.phase !== GamePhase.CHOOSE_MATCH || !prev.pendingChoose) return store
 
-      const { played, matches } = prev.pendingChoose
-      // Remove BOTH matches from field, put back the unchosen one.
-      const unchosen = matches.filter(m => m.id !== matchCard.id)
-      const fieldWithoutMatches = prev.field.filter(f => !matches.some(m => m.id === f.id))
-      const adjustedField = [...fieldWithoutMatches, ...unchosen]
+      const { played } = prev.pendingChoose
+      // Both matches are still on the field; applyTurn captures the chosen one
+      // and leaves the other (it may still be taken by a 따닥 draw).
       const adjusted: GameState = {
         ...prev,
         phase: GamePhase.SELECT,
         pendingChoose: null,
-        field: adjustedField,
         // Re-add played card so applyTurn can remove it cleanly
         playerHand: [...prev.playerHand, played],
-        // Flag: played card had 2 field matches — needed to detect Ppeok/Ttadak on draw
-        _hadTwoMatches: true,
       }
-      return { state: applyTurn(adjusted, played, false, getT()) }
+      return { state: applyTurn(adjusted, played, false, getT(), matchCard) }
     })
   },
 

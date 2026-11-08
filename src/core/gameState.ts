@@ -80,6 +80,7 @@ export interface GameState {
   pendingPoktan: PendingPoktan | null
   pendingShake: PendingShake[]
   shakeCount: number
+  shakenMonths: number[]   // months already shaken this round (once each)
   message: string
   winner: 'player' | 'ai' | 'draw' | null
   _hadTwoMatches: boolean
