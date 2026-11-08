@@ -84,14 +84,17 @@ export default function CardSVG({
       {/* Month number chip — top left */}
       <div style={{
         position: 'absolute',
-        top: size * 0.05,
-        left: size * 0.07,
+        top: size * 0.04,
+        left: size * 0.04,
         fontSize: Math.max(10, size * 0.19),
         color: 'rgba(255,255,255,0.85)',
         fontFamily: 'monospace',
         fontWeight: 'bold',
         lineHeight: 1,
-        textShadow: '0 1px 4px rgba(0,0,0,0.95)',
+        // Dark pill so the number never merges with the card art (e.g. the 光 seal)
+        background: 'rgba(0,0,0,0.62)',
+        borderRadius: 4,
+        padding: '1px 3px',
       }}>
         {month}
       </div>

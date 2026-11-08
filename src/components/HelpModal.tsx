@@ -149,11 +149,14 @@ const SPECIAL_RULES = {
 
 // ── Suit composition table ────────────────────────────────────────────────────
 
+// Thumbnail width in the composition table — sized so all 6 columns fit a 360 px phone
+const CELL_W = 24
+
 const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
 
 // animal: null → card lives in djunk column; show ¹ in animal column
-// Dec ribbon (id 47) doesn't score as ribbon — shown in junk column with ² marker
+// Dec ribbon (id 47) is a ribbon card but doesn't count toward ribbon scoring — ² marker
 const SUIT_DATA: Array<{
   m: number
   bright: number[]
@@ -174,35 +177,35 @@ const SUIT_DATA: Array<{
   { m:  8, bright: [29], animal: [30], ribbon: [],   ribbonNote: false, junk: [31, 32], junkNote: [],   djunk: [] },
   { m:  9, bright: [],   animal: null, ribbon: [34], ribbonNote: false, junk: [35, 36], junkNote: [],   djunk: [33] },
   { m: 10, bright: [],   animal: [37], ribbon: [38], ribbonNote: false, junk: [39, 40], junkNote: [],   djunk: [] },
-  { m: 11, bright: [41], animal: [42], ribbon: [],   ribbonNote: false, junk: [43],     junkNote: [],   djunk: [44] },
-  { m: 12, bright: [45], animal: [46], ribbon: [],   ribbonNote: true,  junk: [47],     junkNote: [47], djunk: [48] },
+  { m: 11, bright: [41], animal: [],   ribbon: [],   ribbonNote: false, junk: [42, 44], junkNote: [],   djunk: [43] },
+  { m: 12, bright: [45], animal: [46], ribbon: [47], ribbonNote: true,  junk: [],       junkNote: [],   djunk: [48] },
 ]
 
 const SUIT_TABLE_LABELS = {
   en: {
     title: 'Card Composition',
     month: 'Month',
-    bright: 'Bright 광',
-    animal: 'Animal 끗',
-    ribbon: 'Ribbon 띠',
-    junk: 'Junk 피',
-    djunk: 'Double Junk 쌍피',
+    bright: '광|Bright',
+    animal: '끗|Animal',
+    ribbon: '띠|Ribbon',
+    junk: '피|Junk',
+    djunk: '쌍피|2× Junk',
     notes: [
       '¹ May & Sep Animal cards count as 쌍피 (double junk) for scoring.',
-      '² Dec Ribbon card doesn\'t count for ribbon combinations.',
+      '² The December ribbon doesn\'t count toward any ribbon score.',
     ],
   },
   de: {
     title: 'Kartenzusammensetzung',
     month: 'Monat',
-    bright: 'Licht 광',
-    animal: 'Tier 끗',
-    ribbon: 'Band 띠',
-    junk: 'Junk 피',
-    djunk: 'Doppeljunk 쌍피',
+    bright: '광|Licht',
+    animal: '끗|Tier',
+    ribbon: '띠|Band',
+    junk: '피|Pi',
+    djunk: '쌍피|2× Pi',
     notes: [
       '¹ Mai- & Sep-Tierkarte zählt als 쌍피 (Doppel-Junk) in der Wertung.',
-      '² Dez.-Band zählt nicht für Bandkombinationen.',
+      '² Das Dezember-Band zählt für keine Band-Wertung.',
     ],
   },
   ko: {
@@ -215,7 +218,7 @@ const SUIT_TABLE_LABELS = {
     djunk: '쌍피',
     notes: [
       '¹ 5월·9월 끗은 쌍피(피×2)로 계산됩니다.',
-      '² 12월 띠는 띠 조합에 포함되지 않습니다.',
+      '² 12월 띠는 띠 점수에 포함되지 않습니다.',
     ],
   },
 }
@@ -225,15 +228,16 @@ function SuitTable({ lang }: { lang: Lang }) {
   return (
     <Section title={L.title}>
       <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full text-xs border-collapse">
+        <table className="w-full text-xs border-collapse table-fixed">
+          <colgroup><col style={{ width: '22%' }} /><col /><col /><col /><col style={{ width: '22%' }} /><col /></colgroup>
           <thead>
             <tr className="bg-slate-800/80 text-center">
-              <th className="text-left px-2 py-1.5 text-slate-400 font-semibold">{L.month}</th>
-              <th className="px-1 py-1.5 text-yellow-400 font-semibold">{L.bright}</th>
-              <th className="px-1 py-1.5 text-green-400 font-semibold">{L.animal}</th>
-              <th className="px-1 py-1.5 text-orange-300 font-semibold">{L.ribbon}</th>
-              <th className="px-1 py-1.5 text-slate-400 font-semibold">{L.junk}</th>
-              <th className="px-1 py-1.5 text-slate-300 font-semibold">{L.djunk}</th>
+              <th className="text-left px-1.5 py-1.5 text-slate-400 font-semibold">{L.month}</th>
+              <th className="px-0.5 py-1.5 text-yellow-400 font-semibold"><HeadLabel text={L.bright} /></th>
+              <th className="px-0.5 py-1.5 text-green-400 font-semibold"><HeadLabel text={L.animal} /></th>
+              <th className="px-0.5 py-1.5 text-orange-300 font-semibold"><HeadLabel text={L.ribbon} /></th>
+              <th className="px-0.5 py-1.5 text-slate-400 font-semibold"><HeadLabel text={L.junk} /></th>
+              <th className="px-0.5 py-1.5 text-slate-300 font-semibold"><HeadLabel text={L.djunk} /></th>
             </tr>
           </thead>
           <tbody>
@@ -243,26 +247,26 @@ function SuitTable({ lang }: { lang: Lang }) {
               const flowerName = lang === 'de' ? m.de : m.en
               return (
                 <tr key={row.m} className={i % 2 === 0 ? 'bg-slate-900/50' : ''}>
-                  <td className="px-2 py-1 text-slate-300 whitespace-nowrap">
-                    <div className="tabular-nums">{row.m}. {calName}</div>
-                    {lang !== 'ko' && <div className="text-slate-600 text-[10px]">{m.ko} ({flowerName})</div>}
+                  <td className="px-1.5 py-1 text-slate-300">
+                    <div className="tabular-nums leading-tight">{row.m}. {m.ko}</div>
+                    <div className="text-slate-500 text-[10px] leading-tight truncate" title={calName}>{lang === 'ko' ? calName : flowerName}</div>
                   </td>
                   <td className="px-1 py-1">
                     <div className="flex justify-center gap-0.5">
-                      {row.bright.map(id => <CardImg key={id} id={id} width={36} />)}
+                      {row.bright.map(id => <CardImg key={id} id={id} width={CELL_W} />)}
                     </div>
                   </td>
                   <td className="px-1 py-1 text-center">
                     {row.animal === null
                       ? <span className="text-slate-500 font-bold text-xl">¹</span>
                       : <div className="flex justify-center gap-0.5">
-                          {row.animal.map(id => <CardImg key={id} id={id} width={36} />)}
+                          {row.animal.map(id => <CardImg key={id} id={id} width={CELL_W} />)}
                         </div>
                     }
                   </td>
                   <td className="px-1 py-1 text-center">
                     <div className="flex justify-center gap-0.5">
-                      {row.ribbon.map(id => <CardImg key={id} id={id} width={36} />)}
+                      {row.ribbon.map(id => <CardImg key={id} id={id} width={CELL_W} />)}
                       {row.ribbonNote && <span className="text-slate-500 font-bold text-xl self-center">²</span>}
                     </div>
                   </td>
@@ -270,7 +274,7 @@ function SuitTable({ lang }: { lang: Lang }) {
                     <div className="flex justify-center gap-0.5">
                       {row.junk.map(id => (
                         <div key={id} className="relative">
-                          <CardImg id={id} width={36} />
+                          <CardImg id={id} width={CELL_W} />
                           {row.junkNote.includes(id) && (
                             <span className="absolute -top-0.5 -right-0.5 text-slate-300 font-bold text-sm leading-none bg-slate-900 rounded-full px-px">²</span>
                           )}
@@ -280,7 +284,7 @@ function SuitTable({ lang }: { lang: Lang }) {
                   </td>
                   <td className="px-1 py-1">
                     <div className="flex justify-center gap-0.5">
-                      {row.djunk.map(id => <CardImg key={id} id={id} width={36} />)}
+                      {row.djunk.map(id => <CardImg key={id} id={id} width={CELL_W} />)}
                     </div>
                   </td>
                 </tr>
@@ -306,9 +310,21 @@ function CardImg({ id, width = 56 }: { id: number; width?: number }) {
       src={CARD_IMAGE_URL[id]}
       alt={`Card ${id}`}
       width={width}
-      className="rounded-lg shadow-md"
+      style={{ width, minWidth: width }}
+      className="rounded-md shadow-md flex-shrink-0"
       draggable={false}
     />
+  )
+}
+
+// "광|Bright" → Korean on top, translation underneath
+function HeadLabel({ text }: { text: string }) {
+  const [ko, tr] = text.split('|')
+  return (
+    <span className="flex flex-col items-center leading-tight">
+      <span>{ko}</span>
+      {tr && <span className="text-[9px] font-normal opacity-70 whitespace-nowrap">{tr}</span>}
+    </span>
   )
 }
 

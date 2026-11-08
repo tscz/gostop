@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore, applyLoserPenalties } from './scoring'
+import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore, applyLoserPenalties, comboProgress } from './scoring'
 import { DECK, CardType } from './cards'
 
 const c = (id: number) => DECK.find(card => card.id === id)!
@@ -9,7 +9,7 @@ const c = (id: number) => DECK.find(card => card.id === id)!
 // Poetry ribbons: 2=Jan, 6=Feb, 10=Mar
 // Plain ribbons: 14=Apr, 18=May, 26=Jul
 // Blue ribbons: 22=Jun, 34=Sep, 38=Oct
-// Double junk: 44=Nov, 48=Dec
+// Double junk: 43=Nov, 48=Dec
 // countsAsDoublePi: 17=May(Tane), 33=Sep(Tane)
 
 // ─────────────────────────────────────────────
@@ -18,7 +18,7 @@ const c = (id: number) => DECK.find(card => card.id === id)!
 describe('applyLoserPenalties', () => {
   // Brights: 1=Jan, 9=Mar, 29=Aug, 41=Nov
   // Junks: 3=Jan, 4=Jan, 7=Feb, 8=Feb, 11=Mar, 12=Mar, 15=Apr, 16=Apr
-  // Double junk: 44=Nov
+  // Double junk: 43=Nov
 
   // 6 pi + 1 bright: safe loser (no penalties trigger)
   const loserSafe = [c(3), c(4), c(7), c(8), c(11), c(12), c(9)]
@@ -70,7 +70,7 @@ describe('applyLoserPenalties', () => {
   it('피박: double junk counts as 2 pi', () => {
     const base = [{ key: 'test', emoji: '✅', label: 'test', pts: 10 }]
     // 4 junks + 1 double junk = 6 pi → no pi bak
-    const cards = [c(3), c(4), c(7), c(8), c(44)] // c(44) = Nov double junk
+    const cards = [c(3), c(4), c(7), c(8), c(43)] // c(43) = Nov double junk
     const { finalScore } = applyLoserPenalties(10, base, [], cards, 0)
     expect(finalScore).toBe(10)
   })
@@ -125,7 +125,7 @@ describe('cardValue', () => {
     expect(cardValue(c(2))).toBe(14)
   })
   it('returns 4 for double junk', () => {
-    expect(cardValue(c(44))).toBe(4)
+    expect(cardValue(c(43))).toBe(4)
   })
   it('returns 1 for junk', () => {
     expect(cardValue(c(3))).toBe(1)
@@ -345,7 +345,7 @@ describe('calcScore', () => {
     })
     it('double junk counts as 2 pi', () => {
       // 8 junks + 1 double junk = 10 pi → bonus
-      const cards = [c(3), c(4), c(7), c(8), c(11), c(12), c(15), c(16), c(44)]
+      const cards = [c(3), c(4), c(7), c(8), c(11), c(12), c(15), c(16), c(43)]
       const { points } = calcScore(cards)
       expect(points).toBe(1)
     })
@@ -373,5 +373,22 @@ describe('calcScore', () => {
       const { breakdown } = calcScore([c(5), c(13), c(30), c(2), c(6), c(10)])
       expect(breakdown).toHaveLength(2) // godori + hongdan
     })
+  })
+})
+
+describe('comboProgress', () => {
+  const card = (id: number) => DECK.find(x => x.id === id)!
+  it('counts progress per combo, pi doubles for 쌍피', () => {
+    // Jan bright, Feb bird, Jan poetry ribbon, Nov 쌍피, Jan junk
+    const rows = comboProgress([card(1), card(5), card(2), card(43), card(3)])
+    const by = Object.fromEntries(rows.map(r => [r.key, r]))
+    expect(by.gwang).toMatchObject({ have: 1, need: 3, done: false })
+    expect(by.godori).toMatchObject({ have: 1, need: 3 })
+    expect(by.hongdan).toMatchObject({ have: 1, need: 3 })
+    expect(by.pi).toMatchObject({ have: 3, need: 10 })
+  })
+  it('marks completed combos as done', () => {
+    const rows = comboProgress([card(5), card(13), card(30)])
+    expect(rows.find(r => r.key === 'godori')?.done).toBe(true)
   })
 })

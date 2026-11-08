@@ -14,11 +14,7 @@ export function calcScore(captured: Card[]): ScoreResult {
   const brights = captured.filter(c => c.type === CardType.BRIGHT)
   const animals = captured.filter(c => c.type === CardType.ANIMAL && !c.countsAsDoublePi)
   const ribbons = captured.filter(c => c.type === CardType.RIBBON && c.month !== 12)
-  const piCount = captured.reduce((s, c) => {
-    if (c.type === CardType.DOUBLE_JUNK || c.countsAsDoublePi) return s + 2
-    if (c.type === CardType.JUNK) return s + 1
-    return s
-  }, 0)
+  const pi = piCount(captured)
 
   let points = 0
   const breakdown: ScoreBreakdown[] = []
@@ -81,10 +77,10 @@ export function calcScore(captured: Card[]): ScoreResult {
   const piCards = captured.filter(
     c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK || c.countsAsDoublePi,
   )
-  if (piCount >= 10) {
-    const b = piCount - 9
+  if (pi >= 10) {
+    const b = pi - 9
     points += b
-    breakdown.push({ key: 'pi', emoji: '🃏', label: `피 ${piCount} Junk`, pts: b, cards: piCards })
+    breakdown.push({ key: 'pi', emoji: '🃏', label: `피 ${pi} Junk`, pts: b, cards: piCards })
   }
 
   return { points, breakdown }
@@ -117,7 +113,7 @@ export function finaliseScore(
     bd = [...bd, { key: 'go_bonus', emoji: '🔥', label: `GO ×${goCount} 보너스`, pts: goScore - rawScore }]
   }
   if (shakeCount > 0) {
-    bd = [...bd, { key: 'shake_bonus', emoji: '🫨', label: `흔들기 ×${Math.pow(2, shakeCount)} 보너스`, pts: finalScore - goScore }]
+    bd = [...bd, { key: 'shake_bonus', emoji: '👋', label: `흔들기 ×${Math.pow(2, shakeCount)} 보너스`, pts: finalScore - goScore }]
   }
   return { finalScore, breakdown: bd }
 }
@@ -157,11 +153,7 @@ export function applyLoserPenalties(
     bd = [...bd, { key: 'gwangbak', emoji: '🌟', label: '광박 Loser has no Brights ×2', pts: score - prev }]
   }
 
-  const loserPiCount = loserCaptured.reduce((s, c) => {
-    if (c.type === CardType.DOUBLE_JUNK || c.countsAsDoublePi) return s + 2
-    if (c.type === CardType.JUNK) return s + 1
-    return s
-  }, 0)
+  const loserPiCount = piCount(loserCaptured)
   const winnerHasPiScore = winnerBreakdown.some(b => b.key === 'pi')
   if (winnerHasPiScore && loserPiCount < 6) {
     const prev = score
@@ -221,4 +213,44 @@ export function applyGoMultiplier(rawScore: number, goCount: number): number {
   let score = rawScore * 2
   for (let i = 4; i <= goCount; i++) score *= i - 1
   return score
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMBO PROGRESS — how close a captured pile is to each scoring combo.
+// Used by the trainer UI to show "피 7/10", "홍단 2/3" etc.
+// `need` is the count at which the combo first scores.
+// ═══════════════════════════════════════════════════════════════
+export interface ComboProgress {
+  key: string
+  label: string
+  have: number
+  need: number
+  done: boolean
+}
+
+export function piCount(captured: Card[]): number {
+  return captured.reduce((s, c) => {
+    if (c.type === CardType.DOUBLE_JUNK || c.countsAsDoublePi) return s + 2
+    if (c.type === CardType.JUNK) return s + 1
+    return s
+  }, 0)
+}
+
+export function comboProgress(captured: Card[]): ComboProgress[] {
+  const brights = captured.filter(c => c.type === CardType.BRIGHT).length
+  const animals = captured.filter(c => c.type === CardType.ANIMAL && !c.countsAsDoublePi).length
+  const ribbons = captured.filter(c => c.type === CardType.RIBBON && c.month !== 12)
+  const godori = captured.filter(c => [2, 4, 8].includes(c.month) && c.type === CardType.ANIMAL).length
+  const rib = (t: string) => ribbons.filter(c => c.ribbonType === t).length
+  const rows: Array<[string, string, number, number]> = [
+    ['gwang', '광', brights, 3],
+    ['godori', '고도리', godori, 3],
+    ['hongdan', '홍단', rib('poetry'), 3],
+    ['cheongdan', '청단', rib('blue'), 3],
+    ['chodan', '초단', rib('plain'), 3],
+    ['tti', '띠', ribbons.length, 5],
+    ['kkeut', '끗', animals, 5],
+    ['pi', '피', piCount(captured), 10],
+  ]
+  return rows.map(([key, label, have, need]) => ({ key, label, have, need, done: have >= need }))
 }

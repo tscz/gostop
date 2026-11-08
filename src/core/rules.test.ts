@@ -35,8 +35,10 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
     poktanSkipsRemaining: 0,
+    aiPoktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier: 1,
+    endReason: null,
     ...overrides,
   }
 }
@@ -355,7 +357,7 @@ describe('applyTurn — sa-ssak', () => {
 // opponent's pile contains no plain JUNK cards.
 
 describe('junk-stealing accepts DOUBLE_JUNK when no plain JUNK exists (issue #7)', () => {
-  const doubleJunk = c(44) // November DOUBLE_JUNK
+  const doubleJunk = c(43) // November DOUBLE_JUNK
 
   it('sa-ssak steals DOUBLE_JUNK when opponent has no plain junk', () => {
     const jan1 = c(1), jan2 = c(2), jan3 = c(3), jan4 = c(4)
@@ -876,7 +878,7 @@ describe('QA: post-poktan skip (#8)', () => {
     expect(next.poktanSkipsRemaining).toBe(0)
   })
 
-  it('applyTurn decrements poktanSkipsRemaining on player turn', () => {
+  it('applyTurn keeps poktan skips banked when the player plays a real card', () => {
     const jan1 = c(1), mar9 = c(9)
     const state = makeState({
       playerHand: [jan1],
@@ -886,7 +888,24 @@ describe('QA: post-poktan skip (#8)', () => {
       poktanSkipsRemaining: 2,
     })
     const next = applyTurn(state, jan1, false, t)
-    expect(next.poktanSkipsRemaining).toBe(1)
+    expect(next.poktanSkipsRemaining).toBe(2)
+  })
+
+  it('round continues after AI move when player hand is empty but skips and pile remain', () => {
+    // Regression: skips used to burn on normal plays, ending the round with cards left
+    const feb5 = c(5), mar9 = c(9)
+    const state = makeState({
+      playerHand: [],
+      aiHand: [feb5, mar9],
+      field: [],
+      drawPile: [c(13), c(21), c(25)],
+      poktanSkipsRemaining: 2,
+      turn: 'ai' as const,
+    })
+    const next = applyTurn(state, feb5, true, t)
+    expect(next.phase).toBe(GamePhase.SELECT)
+    expect(next.turn).toBe('player')
+    expect(next.poktanSkipsRemaining).toBe(2)
   })
 
   it('applyTurn does NOT decrement on AI turn', () => {
@@ -973,5 +992,79 @@ describe('QA: nagari (#9)', () => {
     // Breakdown sum should equal total
     const total = next.playerBreakdown.reduce((s, b) => s + b.pts, 0)
     expect(total).toBe(next.playerScore)
+  })
+})
+
+describe('GO/STOP keeps the turn with the player', () => {
+  it('applyTurn reaching 7+ points sets phase GOSTOP with turn=player', () => {
+    // Capturing Aug bird + Aug bright completes godori (5) and 삼광 (3) → 8 pts
+    const state = makeState({
+      playerHand: [c(30), c(3)],
+      aiHand: [c(7), c(8)],
+      field: [c(29)],
+      drawPile: [c(11), c(12)],
+      playerCaptured: [c(5), c(13), c(1), c(9)],
+    })
+    const next = applyTurn(state, c(30), false, t)
+    expect(next.playerScore).toBeGreaterThanOrEqual(7)
+    expect(next.phase).toBe(GamePhase.GOSTOP)
+    expect(next.turn).toBe('player')
+  })
+})
+
+describe('card data', () => {
+  it('November (오동) has no animal card: 광, 피, 피, 쌍피', () => {
+    const nov = DECK.filter(card => card.month === 11).map(card => card.type).sort()
+    expect(nov).toEqual(['bright', 'double_junk', 'junk', 'junk'])
+  })
+})
+
+describe('Poktan draws from the pile and both sides get bonus draws', () => {
+  const jan = [c(1), c(2), c(3), c(4)]
+
+  it('player poktan flips the top pile card', () => {
+    const state = makeState({
+      playerHand: [jan[0], jan[1], jan[2], c(9)],
+      aiHand: [c(21)],
+      field: [jan[3], c(10)],          // Mar ribbon on the field
+      drawPile: [c(11), c(30)],        // Mar junk on top → captures the Mar ribbon
+      pendingPoktan: { handCards: [jan[0], jan[1], jan[2]], fieldCard: jan[3] },
+    })
+    const next = applyPoktan(state, false, t)
+    expect(next.drawPile).toEqual([c(30)])
+    expect(next.playerCaptured).toContainEqual(c(11))
+    expect(next.playerCaptured).toContainEqual(c(10))
+    expect(next.poktanSkipsRemaining).toBe(2)
+  })
+
+  it('AI poktan grants the AI 2 bonus draws', () => {
+    const state = makeState({
+      aiHand: [jan[0], jan[1], jan[2]],
+      playerHand: [c(9)],
+      field: [jan[3]],
+      drawPile: [c(13), c(21), c(25)],
+      turn: 'ai',
+      pendingPoktan: { handCards: [jan[0], jan[1], jan[2]], fieldCard: jan[3] },
+    })
+    const next = applyPoktan(state, true, t)
+    expect(next.aiPoktanSkipsRemaining).toBe(2)
+    expect(next.poktanSkipsRemaining).toBe(0)
+    expect(next.phase).toBe(GamePhase.SELECT) // AI hand empty but it can still skip
+  })
+
+  it('AI skip turn draws a card and uses one AI skip', () => {
+    const state = makeState({
+      aiHand: [],
+      playerHand: [c(9)],
+      field: [c(14)],                  // Apr ribbon
+      drawPile: [c(15), c(21)],        // Apr junk on top → AI captures the ribbon
+      turn: 'ai',
+      aiPoktanSkipsRemaining: 2,
+    })
+    const next = applySkipTurn(state, t, true)
+    expect(next.aiCaptured).toEqual(expect.arrayContaining([c(14), c(15)]))
+    expect(next.aiPoktanSkipsRemaining).toBe(1)
+    expect(next.turn).toBe('player')
+    expect(next.drawPile).toEqual([c(21)])
   })
 })

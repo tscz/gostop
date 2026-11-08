@@ -166,6 +166,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           phase: GamePhase.GAME_OVER,
           pendingShake: [],
           winner: ge.winner,
+          endReason: 'stop',
           message:
             prev.goCount > 0 && prev.shakeCount > 0
               ? `STOP! GO×${prev.goCount} 흔들기×${Math.pow(2, prev.shakeCount)} → ${ge.finalPlayerPts}P`
@@ -239,6 +240,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           playerScore: ge.finalPlayerPts,
           playerBreakdown: ge.finalPlayerBD,
           pendingShake: [],
+          endReason: 'aiStop',
           message: 'AI: STOP!',
         }
       }
@@ -255,8 +257,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return { state: newState }
       }
 
-      const card = selectAiCard(prev)
-      const newState = applyTurn(prev, card, true, getT())
+      // After its own Poktan the AI may have an empty hand: use a bonus draw
+      const newState = prev.aiHand.length === 0 && prev.aiPoktanSkipsRemaining > 0
+        ? applySkipTurn(prev, getT(), true)
+        : applyTurn(prev, selectAiCard(prev), true, getT())
 
       // AI Go/Stop decision after its turn
       if (newState.aiScore >= 7 && newState.phase !== GamePhase.GAME_OVER) {

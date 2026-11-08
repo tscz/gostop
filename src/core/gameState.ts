@@ -86,9 +86,12 @@ export interface GameState {
   scoreAtLastGo: number
   // #8 — post-poktan hand-card skip
   poktanSkipsRemaining: number
+  aiPoktanSkipsRemaining: number  // the AI's own post-poktan bonus draws
   // #9 — nagari
   isNagari: boolean
   nagariMultiplier: number  // ×1 normally; doubles with each consecutive nagari
+  // Why the round ended — drives the result panel copy
+  endReason: 'stop' | 'aiStop' | 'natural' | 'instant' | null
 }
 
 // ═══════════════════════════════════════════════════════════════

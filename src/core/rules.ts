@@ -1,4 +1,4 @@
-import { CardType } from './cards'
+import { CardType, MONTHS } from './cards'
 import { GamePhase } from './gameState'
 import { calcScore, finaliseScore, applyLoserPenalties, applyNagariMultiplier, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
@@ -48,6 +48,65 @@ export function resolveGameEnd(
   } else {
     return { winner: 'draw', isNagari: false, finalPlayerPts: baseFinalPlayerPts, finalPlayerBD: baseFinalPlayerBD, finalAiPts: baseAiPts, finalAiBD: baseAiBD }
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// SHARED HELPERS
+// ═══════════════════════════════════════════════════════════════
+function stealJunk(captured: Card[], oppCaptured: Card[]): { captured: Card[]; oppCaptured: Card[] } {
+  const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
+  if (!junk) return { captured, oppCaptured }
+  return { captured: [...captured, junk], oppCaptured: oppCaptured.filter(c => c.id !== junk.id) }
+}
+
+interface DrawResult {
+  field: Card[]
+  drawPile: Card[]
+  captured: Card[]
+  oppCaptured: Card[]
+  drawn: Card | undefined
+  drawnMatches: Card[]
+  special: 'ppeok' | 'ttadak' | null
+}
+
+// Flip the top pile card and resolve it against the field (no hand card involved):
+// used by Poktan and by Skip turns.
+function resolveDraw(field: Card[], drawPile: Card[], captured: Card[], oppCaptured: Card[]): DrawResult {
+  const pile = [...drawPile]
+  const drawn = pile.shift()
+  let special: DrawResult['special'] = null
+  if (!drawn) return { field, drawPile: pile, captured, oppCaptured, drawn, drawnMatches: [], special }
+  const drawnMatches = field.filter(f => f.month === drawn.month)
+  if (drawnMatches.length === 0) {
+    field = [...field, drawn]
+  } else if (drawnMatches.length === 1) {
+    field = field.filter(f => f.id !== drawnMatches[0].id)
+    captured = [...captured, drawn, drawnMatches[0]]
+  } else if (drawnMatches.length === 2) {
+    // Ppeok: drawn hits 2 field cards → all 3 stay
+    special = 'ppeok'
+    field = [...field, drawn]
+  } else {
+    // Ttadak from draw pile: all 4 collected + steal
+    special = 'ttadak'
+    field = field.filter(f => !drawnMatches.some(m => m.id === f.id))
+    captured = [...captured, drawn, ...drawnMatches]
+    ;({ captured, oppCaptured } = stealJunk(captured, oppCaptured))
+  }
+  return { field, drawPile: pile, captured, oppCaptured, drawn, drawnMatches, special }
+}
+
+// Round ends when both hands and the pile are empty, or when the player about
+// to move has no hand card and cannot skip (no skips left or nothing to draw).
+function isRoundOver(
+  playerHand: Card[], aiHand: Card[], drawPile: Card[],
+  nextIsAI: boolean, playerSkips: number, aiSkips: number,
+): boolean {
+  if (playerHand.length === 0 && aiHand.length === 0 && drawPile.length === 0) return true
+  const nextHand = nextIsAI ? aiHand : playerHand
+  const nextSkips = nextIsAI ? aiSkips : playerSkips
+  return nextHand.length === 0 && (nextSkips === 0 || drawPile.length === 0)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -104,8 +163,8 @@ export function applyShake(
   t: (key: string) => string,
 ): GameState {
   const exp: MoveExplanation = {
-    lines: [`🫨 흔들기 Shake! ${t('shakeDesc')}`, `💡 ${t('tipExcellent')}`],
-    quality: 'excellent',
+    lines: [`👋 ${t('shakeDone')}`],
+    quality: 'good',
     delta: 0,
     newPts: state.playerScore,
     who: 'player',
@@ -162,10 +221,12 @@ export function initState(opts: InitOpts = {}): GameState {
       _hadTwoMatches: false,
       scoreAtLastGo: 0,
       poktanSkipsRemaining: 0,
+      aiPoktanSkipsRemaining: 0,
       isNagari: false,
       nagariMultiplier,
       message: instantWin === 'player' ? '💣 4장 폭탄! 즉시 승리!' : '💣 AI 4장 폭탄!',
       winner: instantWin,
+      endReason: 'instant',
     }
   }
 
@@ -194,8 +255,10 @@ export function initState(opts: InitOpts = {}): GameState {
     _hadTwoMatches: false,
     scoreAtLastGo: 0,
     poktanSkipsRemaining: 0,
+    aiPoktanSkipsRemaining: 0,
     isNagari: false,
     nagariMultiplier,
+    endReason: null,
   }
 }
 
@@ -227,14 +290,17 @@ export function applyPoktan(
     : state.aiHand
 
   // Remove field card from field
-  const newField = state.field.filter(f => f.id !== fieldCard.id)
+  let newField = state.field.filter(f => f.id !== fieldCard.id)
 
   // Steal 1 junk from opponent
-  const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
-  if (junk) {
-    oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
-    captured = [...captured, junk]
-  }
+  ;({ captured, oppCaptured } = stealJunk(captured, oppCaptured))
+
+  // A bomb turn still flips the top pile card, like any other turn
+  const draw = resolveDraw(newField, state.drawPile, captured, oppCaptured)
+  newField = draw.field
+  captured = draw.captured
+  oppCaptured = draw.oppCaptured
+  const newDraw = draw.drawPile
 
   // Score
   const prevPts = isAI ? state.aiScore : state.playerScore
@@ -243,12 +309,12 @@ export function applyPoktan(
   const delta = newPts - prevPts
 
   const expLines: string[] = [
-    `💣 폭탄 Poktan! ${t('poktanDesc')}`,
-    ...(delta > 0 ? [`🎉 +${delta} ${t('pts')}! (${t('total')}: ${newPts})`] : []),
+    `💣 ${t(isAI ? 'poktanDoneAi' : 'poktanDone')}`,
+    ...drawLines(draw, isAI, t),
+    ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
     ...breakdown
       .filter(b => !prevBD.some(p => p.key === b.key))
-      .map(b => `🏆 ${b.emoji} ${b.label} +${b.pts}${t('pts')}`),
-    `💡 ${t('tipExcellent')}`,
+      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
   ]
 
   const exp: MoveExplanation = {
@@ -259,13 +325,11 @@ export function applyPoktan(
     who: isAI ? 'ai' : 'player',
   }
 
-  // Game over check: both hands + pile empty, OR next player has no cards to play
-  // (poktan skips let the human player draw without a hand card)
+  // Poktan grants the bomber 2 skip turns (they played 2 extra cards)
+  const playerSkips = state.poktanSkipsRemaining + (isAI ? 0 : 2)
+  const aiSkips = state.aiPoktanSkipsRemaining + (isAI ? 2 : 0)
   const nextPlayerHand = isAI ? newPH : newAH
-  const nextPlayerSkips = isAI ? state.poktanSkipsRemaining : 0
-  const gameOver =
-    (newPH.length === 0 && newAH.length === 0 && state.drawPile.length === 0) ||
-    (nextPlayerHand.length === 0 && (nextPlayerSkips === 0 || state.drawPile.length === 0))
+  const gameOver = isRoundOver(newPH, newAH, newDraw, !isAI, playerSkips, aiSkips)
   const rawPlayerPts = isAI ? state.playerScore : newPts
   const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
   const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
@@ -307,6 +371,7 @@ export function applyPoktan(
     playerHand: newPH,
     aiHand: newAH,
     field: newField,
+    drawPile: newDraw,
     playerCaptured: isAI ? oppCaptured : captured,
     aiCaptured: isAI ? captured : oppCaptured,
     playerScore: finalPlayerPts,
@@ -314,7 +379,8 @@ export function applyPoktan(
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
     turn: isAI ? 'player' : 'ai',
-    poktanSkipsRemaining: !isAI ? state.poktanSkipsRemaining + 2 : state.poktanSkipsRemaining,
+    poktanSkipsRemaining: playerSkips,
+    aiPoktanSkipsRemaining: aiSkips,
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -323,6 +389,7 @@ export function applyPoktan(
     pendingShake,
     winner,
     isNagari: isNagariGame,
+    endReason: gameOver ? 'natural' : null,
     message: '',
   }
 }
@@ -448,11 +515,7 @@ export function applyTurn(
 
   // Game over check: both hands + pile empty, OR next player has no cards to play
   // (poktan skips let the human player draw without a hand card)
-  const nextPlayerHand = isAI ? newPH : newAH
-  const nextPlayerSkips = isAI ? state.poktanSkipsRemaining : 0
-  const gameOver =
-    (newPH.length === 0 && newAH.length === 0 && newDraw.length === 0) ||
-    (nextPlayerHand.length === 0 && (nextPlayerSkips === 0 || newDraw.length === 0))
+  const gameOver = isRoundOver(newPH, newAH, newDraw, !isAI, state.poktanSkipsRemaining, state.aiPoktanSkipsRemaining)
   // R9: after calling GO, player must gain ≥1 point before calling GO/STOP again
   const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
   const canCall = !isAI && newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo
@@ -493,11 +556,8 @@ export function applyTurn(
   // Only offer shake when it is the player's turn next (AI ignores shake)
   const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField) : []
 
-  // Decrement skip counter on player turns (whether they skipped or played normally)
-  const poktanSkipsRemaining =
-    !isAI && state.poktanSkipsRemaining > 0
-      ? state.poktanSkipsRemaining - 1
-      : state.poktanSkipsRemaining
+  // Skips are only consumed by applySkipTurn — playing a real card keeps them banked
+  const poktanSkipsRemaining = state.poktanSkipsRemaining
 
   return {
     ...state, // scoreAtLastGo carried through via spread
@@ -512,7 +572,8 @@ export function applyTurn(
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
-    turn: isAI ? 'player' : 'ai',
+    // While the player decides GO/STOP the turn stays with them; callGo hands it to the AI
+    turn: isAI || phase === GamePhase.GOSTOP ? 'player' : 'ai',
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -521,88 +582,76 @@ export function applyTurn(
     pendingShake,
     winner,
     isNagari: isNagariGame,
+    endReason: gameOver ? 'natural' : null,
     poktanSkipsRemaining,
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// APPLY SKIP TURN — #8 post-poktan hand-card skip
-// Player draws from the pile without playing a hand card.
-// Decrements poktanSkipsRemaining.
+// APPLY SKIP TURN — post-poktan bonus draw
+// The mover flips a pile card without playing a hand card and uses
+// up one skip. Works for both the player and the AI.
 // ═══════════════════════════════════════════════════════════════
 export function applySkipTurn(
   state: GameState,
   t: (key: string) => string,
+  isAI = false,
 ): GameState {
-  let newField = [...state.field]
-  let newDraw = [...state.drawPile]
-  let captured = [...state.playerCaptured]
-  let oppCaptured = [...state.aiCaptured]
+  const draw = resolveDraw(
+    state.field, state.drawPile,
+    isAI ? state.aiCaptured : state.playerCaptured,
+    isAI ? state.playerCaptured : state.aiCaptured,
+  )
+  const captured = draw.captured
+  const oppCaptured = draw.oppCaptured
+  const playerCaptured = isAI ? oppCaptured : captured
+  const aiCaptured = isAI ? captured : oppCaptured
 
-  // Draw card only (no hand-card phase)
-  const drawn = newDraw.shift()
-  if (drawn) {
-    const drawnMatches = newField.filter(f => f.month === drawn.month)
-    if (drawnMatches.length === 0) {
-      newField = [...newField, drawn]
-    } else if (drawnMatches.length === 1) {
-      newField = newField.filter(f => f.id !== drawnMatches[0].id)
-      captured = [...captured, drawn, drawnMatches[0]]
-    } else if (drawnMatches.length === 2) {
-      // Ppeok: drawn hits 2 field cards → all 3 stay
-      newField = [...newField, drawn]
-    } else if (drawnMatches.length === 3) {
-      // Ttadak from draw pile
-      newField = newField.filter(f => !drawnMatches.some(m => m.id === f.id))
-      captured = [...captured, drawn, ...drawnMatches]
-      const junk = oppCaptured.find(c => c.type === CardType.JUNK || c.type === CardType.DOUBLE_JUNK)
-      if (junk) {
-        oppCaptured = oppCaptured.filter(c => c.id !== junk.id)
-        captured = [...captured, junk]
-      }
-    }
-  }
-
-  const prevPts = state.playerScore
+  const prevPts = isAI ? state.aiScore : state.playerScore
+  const prevBD = isAI ? state.aiBreakdown : state.playerBreakdown
   const { points: newPts, breakdown } = calcScore(captured)
   const delta = newPts - prevPts
 
   const exp: MoveExplanation = {
     lines: [
-      `⏭️ ${t('skipHandCard')}`,
+      `⏭️ ${t(isAI ? 'skipDoneAi' : 'skipHandCard')}`,
+      ...drawLines(draw, isAI, t),
       ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
+      ...breakdown
+        .filter(b => !prevBD.some(p => p.key === b.key))
+        .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
     ],
     quality: 'neutral',
     delta,
     newPts,
-    who: 'player',
+    who: isAI ? 'ai' : 'player',
   }
 
-  const poktanSkipsRemaining = state.poktanSkipsRemaining > 0
-    ? state.poktanSkipsRemaining - 1
-    : 0
+  const playerSkips = !isAI ? Math.max(0, state.poktanSkipsRemaining - 1) : state.poktanSkipsRemaining
+  const aiSkips = isAI ? Math.max(0, state.aiPoktanSkipsRemaining - 1) : state.aiPoktanSkipsRemaining
+  const gameOver = isRoundOver(state.playerHand, state.aiHand, draw.drawPile, !isAI, playerSkips, aiSkips)
 
-  // Game over check
-  const gameOver =
-    (state.playerHand.length === 0 && state.aiHand.length === 0 && newDraw.length === 0) ||
-    state.aiHand.length === 0
+  const rawPlayerPts = isAI ? state.playerScore : newPts
+  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
+  const rawAiPts = isAI ? newPts : state.aiScore
+  const rawAiBD = isAI ? breakdown : state.aiBreakdown
 
   let isNagariGame = false
   let phase: GameState['phase'] = GamePhase.SELECT
   let winner: GameState['winner'] = null
-  let finalPlayerPts = newPts
-  let finalPlayerBD = breakdown
-  let finalAiPts = state.aiScore
-  let finalAiBD = state.aiBreakdown
+  let finalPlayerPts = rawPlayerPts
+  let finalPlayerBD = rawPlayerBD
+  let finalAiPts = rawAiPts
+  let finalAiBD = rawAiBD
 
   if (gameOver) {
     phase = GamePhase.GAME_OVER
     const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = finaliseScore(
-      newPts, state.goCount, state.shakeCount, breakdown,
+      rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD,
     )
     const ge = resolveGameEnd(
-      baseFinalPlayerPts, baseFinalPlayerBD, state.aiScore, state.aiBreakdown,
-      captured, oppCaptured,
+      baseFinalPlayerPts, baseFinalPlayerBD, rawAiPts, rawAiBD,
+      playerCaptured, aiCaptured,
       state.goCount, state.nagariMultiplier, true,
     )
     winner = ge.winner
@@ -613,25 +662,27 @@ export function applySkipTurn(
     finalAiBD = ge.finalAiBD
   }
 
-  const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
-  const canCall = newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo
-  if (!gameOver && canCall) phase = GamePhase.GOSTOP
+  if (!isAI && !gameOver) {
+    const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
+    if (newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo) phase = GamePhase.GOSTOP
+  }
 
-  const pendingPoktan = !gameOver ? detectPoktan(state.aiHand, newField) : null
-  const pendingShake: GameState['pendingShake'] = []
+  const nextHand = isAI ? state.playerHand : state.aiHand
+  const pendingPoktan = !gameOver ? detectPoktan(nextHand, draw.field) : null
+  const pendingShake = !gameOver && isAI ? detectShake(nextHand, draw.field) : []
 
   return {
     ...state,
     _hadTwoMatches: false,
-    field: newField,
-    drawPile: newDraw,
-    playerCaptured: captured,
-    aiCaptured: oppCaptured,
+    field: draw.field,
+    drawPile: draw.drawPile,
+    playerCaptured,
+    aiCaptured,
     playerScore: finalPlayerPts,
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
-    turn: 'ai',
+    turn: isAI || phase === GamePhase.GOSTOP ? 'player' : 'ai',
     phase,
     lastExp: exp,
     history: [...state.history, exp],
@@ -640,6 +691,28 @@ export function applySkipTurn(
     pendingShake,
     winner,
     isNagari: isNagariGame,
-    poktanSkipsRemaining,
+    endReason: gameOver ? 'natural' : null,
+    poktanSkipsRemaining: playerSkips,
+    aiPoktanSkipsRemaining: aiSkips,
   }
+}
+
+// Coach lines for a pile flip that isn't tied to a hand card (Poktan, Skip)
+function drawLines(draw: DrawResult, isAI: boolean, t: (key: string) => string): string[] {
+  if (!draw.drawn) return []
+  const month = MONTHS[draw.drawn.month - 1].ko
+  const typeKey: Record<string, string> = {
+    bright: 'typeBright', animal: 'typeAnimal', ribbon: 'typeRibbon', junk: 'typeJunk', double_junk: 'typeDoubleJunk',
+  }
+  if (draw.special === 'ppeok') return [t('coachPpeok').replace('{{month}}', month)]
+  if (draw.drawnMatches.length > 0) {
+    const best = [draw.drawn, ...draw.drawnMatches].reduce((a, b) => (cardValue(b) > cardValue(a) ? b : a))
+    const line = t(isAI ? 'coachAiDrewMatch' : 'coachDrewMatch').replace('{{month}}', month).replace('{{type}}', t(typeKey[best.type]))
+    return draw.special === 'ttadak' ? [line, t(isAI ? 'coachAiTtadak' : 'coachTtadak')] : [line]
+  }
+  return [
+    isAI
+      ? t('coachAiDrewField').replace('{{month}}', month)
+      : t('coachDrewField').replace('{{month}}', month).replace('{{type}}', t(typeKey[draw.drawn.type])),
+  ]
 }
