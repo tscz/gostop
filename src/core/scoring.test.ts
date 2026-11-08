@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore, applyLoserPenalties } from './scoring'
+import { calcScore, cardValue, applyGoMultiplier, applyShakeMultiplier, finaliseScore, applyLoserPenalties, comboProgress } from './scoring'
 import { DECK, CardType } from './cards'
 
 const c = (id: number) => DECK.find(card => card.id === id)!
@@ -373,5 +373,22 @@ describe('calcScore', () => {
       const { breakdown } = calcScore([c(5), c(13), c(30), c(2), c(6), c(10)])
       expect(breakdown).toHaveLength(2) // godori + hongdan
     })
+  })
+})
+
+describe('comboProgress', () => {
+  const card = (id: number) => DECK.find(x => x.id === id)!
+  it('counts progress per combo, pi doubles for 쌍피', () => {
+    // Jan bright, Feb bird, Jan poetry ribbon, Nov 쌍피, Jan junk
+    const rows = comboProgress([card(1), card(5), card(2), card(44), card(3)])
+    const by = Object.fromEntries(rows.map(r => [r.key, r]))
+    expect(by.gwang).toMatchObject({ have: 1, need: 3, done: false })
+    expect(by.godori).toMatchObject({ have: 1, need: 3 })
+    expect(by.hongdan).toMatchObject({ have: 1, need: 3 })
+    expect(by.pi).toMatchObject({ have: 3, need: 10 })
+  })
+  it('marks completed combos as done', () => {
+    const rows = comboProgress([card(5), card(13), card(30)])
+    expect(rows.find(r => r.key === 'godori')?.done).toBe(true)
   })
 })

@@ -16,6 +16,10 @@ function typeName(type: CardType, t: (k: string) => string): string {
 
 const GOSTOP_THRESHOLD = 7
 
+function bestCard(cards: Card[]): Card {
+  return cards.reduce((a, b) => (cardValue(b) > cardValue(a) ? b : a))
+}
+
 export interface BuildExplanationParams {
   played: Card
   handMatches: Card[]
@@ -48,19 +52,21 @@ export function buildExplanation({
   const isAI = who === 'ai'
 
   const monthName = MONTHS[played.month - 1].ko
-  const playedType = typeName(played.type, t)
 
   // ── Line 1: The play ─────────────────────────────────────────
   if (handMatches.length > 0) {
     const gain = cardValue(played) + handMatches.reduce((s, c) => s + cardValue(c), 0)
     quality = gain >= 50 ? 'excellent' : gain >= 20 ? 'good' : 'ok'
+    // Describe the most valuable card taken (played or field), not just the played one
+    const best = bestCard([played, ...handMatches])
+    const bestType = typeName(best.type, t)
 
     if (isAI) {
-      lines.push(t('coachAiCaptured').replace('{{month}}', monthName).replace('{{type}}', playedType))
-    } else if (quality === 'excellent') {
-      lines.push(t('coachYouCapturedExcellent').replace('{{month}}', monthName).replace('{{type}}', playedType))
+      lines.push(t('coachAiCaptured').replace('{{month}}', monthName).replace('{{type}}', bestType))
+    } else if (best.type === 'bright') {
+      lines.push(t('coachYouCapturedBright').replace('{{month}}', monthName))
     } else {
-      lines.push(t('coachYouCaptured').replace('{{month}}', monthName).replace('{{type}}', playedType))
+      lines.push(t('coachYouCaptured').replace('{{month}}', monthName).replace('{{type}}', bestType))
     }
   } else {
     quality = 'poor'
@@ -74,7 +80,8 @@ export function buildExplanation({
   // ── Line 2: Drawn card ───────────────────────────────────────
   if (drawn) {
     const drawnMonth = MONTHS[drawn.month - 1].ko
-    const drawnType = typeName(drawn.type, t)
+    // On a capture, name the best of the drawn card and the field card it took
+    const drawnType = typeName((drawnMatches.length === 1 ? bestCard([drawn, ...drawnMatches]) : drawn).type, t)
 
     if (special === 'ppeok') {
       lines.push(t('coachPpeok').replace('{{month}}', drawnMonth))
