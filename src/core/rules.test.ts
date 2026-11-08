@@ -30,6 +30,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     pendingPoktan: null,
     pendingShake: [],
     shakeCount: 0,
+    shakenMonths: [],
     message: '',
     winner: null,
     _hadTwoMatches: false,

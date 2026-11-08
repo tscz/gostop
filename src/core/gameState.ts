@@ -21,6 +21,7 @@ export interface ScoreBreakdown {
   label: string
   pts: number
   cards?: Card[]
+  n?: number  // count or multiplier shown in the label (띠 6, GO ×2, …)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -80,6 +81,7 @@ export interface GameState {
   pendingPoktan: PendingPoktan | null
   pendingShake: PendingShake[]
   shakeCount: number
+  shakenMonths: number[]   // months already shaken this round (once each)
   message: string
   winner: 'player' | 'ai' | 'draw' | null
   _hadTwoMatches: boolean

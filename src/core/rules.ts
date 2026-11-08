@@ -2,6 +2,7 @@ import { CardType, MONTHS } from './cards'
 import { GamePhase } from './gameState'
 import { calcScore, finaliseScore, applyLoserPenalties, applyNagariMultiplier, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
+import { breakdownLabel } from './labels'
 import { deal } from './deck'
 import type { Card } from './cards'
 import type { GameState, MoveExplanation, PendingPoktan, PendingShake, ScoreBreakdown } from './gameState'
@@ -136,7 +137,7 @@ export function detectPoktan(hand: Card[], field: Card[]): PendingPoktan | null 
 // matching card on the field (distinct from Poktan which requires
 // exactly 1 matching field card).
 // ═══════════════════════════════════════════════════════════════
-export function detectShake(hand: Card[], field: Card[]): PendingShake[] {
+export function detectShake(hand: Card[], field: Card[], alreadyShaken: number[] = []): PendingShake[] {
   const byMonth = new Map<number, Card[]>()
   for (const c of hand) {
     if (!byMonth.has(c.month)) byMonth.set(c.month, [])
@@ -144,7 +145,8 @@ export function detectShake(hand: Card[], field: Card[]): PendingShake[] {
   }
   const result: PendingShake[] = []
   for (const [month, cards] of byMonth) {
-    if (cards.length >= 3) {
+    // Each month can be shaken only once per round
+    if (cards.length >= 3 && !alreadyShaken.includes(month)) {
       const fieldCard = field.find(f => f.month === month)
       if (!fieldCard) result.push({ handCards: cards.slice(0, 3) })
     }
@@ -159,7 +161,7 @@ export function detectShake(hand: Card[], field: Card[]): PendingShake[] {
 // ═══════════════════════════════════════════════════════════════
 export function applyShake(
   state: GameState,
-  _shake: PendingShake,
+  shake: PendingShake,
   t: (key: string) => string,
 ): GameState {
   const exp: MoveExplanation = {
@@ -172,6 +174,7 @@ export function applyShake(
   return {
     ...state,
     shakeCount: state.shakeCount + 1,
+    shakenMonths: [...state.shakenMonths, shake.handCards[0].month],
     pendingShake: [],
     lastExp: exp,
     history: [...state.history, exp],
@@ -183,10 +186,12 @@ export function applyShake(
 // ═══════════════════════════════════════════════════════════════
 export interface InitOpts {
   nagariMultiplier?: number
+  /** Fixed 48-card order instead of a shuffle (tests) */
+  deck?: Card[]
 }
 
 export function initState(opts: InitOpts = {}): GameState {
-  const { playerHand, aiHand, field, drawPile, instantWin } = deal()
+  const { playerHand, aiHand, field, drawPile, instantWin } = deal(opts.deck)
   const nagariMultiplier = opts.nagariMultiplier ?? 1
 
   // Rule: player with 4 of same month in hand wins immediately (5pts, scaled by nagariMultiplier)
@@ -218,6 +223,7 @@ export function initState(opts: InitOpts = {}): GameState {
       pendingPoktan: null,
       pendingShake: [],
       shakeCount: 0,
+      shakenMonths: [],
       _hadTwoMatches: false,
       scoreAtLastGo: 0,
       poktanSkipsRemaining: 0,
@@ -250,6 +256,7 @@ export function initState(opts: InitOpts = {}): GameState {
     pendingPoktan: detectPoktan(playerHand, field),
     pendingShake: detectShake(playerHand, field),
     shakeCount: 0,
+    shakenMonths: [],
     message: '',
     winner: null,
     _hadTwoMatches: false,
@@ -314,7 +321,7 @@ export function applyPoktan(
     ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
     ...breakdown
       .filter(b => !prevBD.some(p => p.key === b.key))
-      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
+      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', breakdownLabel(b, t)).replace('{{pts}}', String(b.pts))),
   ]
 
   const exp: MoveExplanation = {
@@ -330,13 +337,15 @@ export function applyPoktan(
   const aiSkips = state.aiPoktanSkipsRemaining + (isAI ? 2 : 0)
   const nextPlayerHand = isAI ? newPH : newAH
   const gameOver = isRoundOver(newPH, newAH, newDraw, !isAI, playerSkips, aiSkips)
-  const rawPlayerPts = isAI ? state.playerScore : newPts
-  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
+  // The opponent may have lost a stolen junk card: re-score their pile too
+  const opp = calcScore(oppCaptured)
+  const rawPlayerPts = isAI ? opp.points : newPts
+  const rawPlayerBD = isAI ? opp.breakdown : breakdown
   const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
     ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
     : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
-  const baseAiPts = isAI ? newPts : state.aiScore
-  const baseAiBD = isAI ? breakdown : state.aiBreakdown
+  const baseAiPts = isAI ? newPts : opp.points
+  const baseAiBD = isAI ? breakdown : opp.breakdown
   let phase: GameState['phase'] = GamePhase.SELECT
   let winner: GameState['winner'] = null
   let isNagariGame = false
@@ -358,12 +367,16 @@ export function applyPoktan(
     finalPlayerBD = ge.finalPlayerBD
     finalAiPts = ge.finalAiPts
     finalAiBD = ge.finalAiBD
+  } else if (!isAI) {
+    // A Poktan can reach 7 points: offer GO/STOP exactly like a normal turn
+    const scoreGainedSinceLastGo = state.goCount > 0 ? newPts > state.scoreAtLastGo : true
+    if (newPts >= GOSTOP_THRESHOLD && scoreGainedSinceLastGo) phase = GamePhase.GOSTOP
   }
 
   // Detect Poktan + Shake for the next player (only if game isn't over)
   const pendingPoktan = !gameOver ? detectPoktan(nextPlayerHand, newField) : null
   // Only offer shake when it is the player's turn next
-  const pendingShake = !gameOver && isAI ? detectShake(nextPlayerHand, newField) : []
+  const pendingShake = !gameOver && isAI ? detectShake(nextPlayerHand, newField, state.shakenMonths) : []
 
   return {
     ...state,
@@ -378,7 +391,7 @@ export function applyPoktan(
     aiScore: finalAiPts,
     playerBreakdown: finalPlayerBD,
     aiBreakdown: finalAiBD,
-    turn: isAI ? 'player' : 'ai',
+    turn: isAI || phase === GamePhase.GOSTOP ? 'player' : 'ai',
     poktanSkipsRemaining: playerSkips,
     aiPoktanSkipsRemaining: aiSkips,
     phase,
@@ -402,6 +415,8 @@ export function applyTurn(
   played: Card,
   isAI: boolean,
   t: (key: string) => string,
+  /** With two field matches: the one the player chose (AI picks the more valuable) */
+  chosenMatch?: Card,
 ): GameState {
   let newField = [...state.field]
   let newDraw = [...state.drawPile]
@@ -419,12 +434,13 @@ export function applyTurn(
     newField = newField.filter(f => f.id !== handMatches[0].id)
     captured = [...captured, played, handMatches[0]]
   } else if (handMatches.length === 2) {
-    // AI picks the higher-value match; player goes through CHOOSE_MATCH so this
-    // branch is only reached by AI
-    const chosen = handMatches.reduce((best, m) => cardValue(m) >= cardValue(best) ? m : best)
+    // Player: the card picked in CHOOSE_MATCH. AI: the higher-value match.
+    const chosen = chosenMatch && handMatches.some(m => m.id === chosenMatch.id)
+      ? chosenMatch
+      : handMatches.reduce((best, m) => cardValue(m) >= cardValue(best) ? m : best)
     newField = newField.filter(f => f.id !== chosen.id)
     captured = [...captured, played, chosen]
-    hadTwoMatches = true // needed so draw-phase ttadak check fires for AI
+    hadTwoMatches = true // needed so the draw-phase ttadak check fires
   } else if (handMatches.length === 3) {
     // Sa-ssak (싹쓸이): played card sweeps all 3 remaining field cards of same month
     newField = newField.filter(f => !handMatches.some(m => m.id === f.id))
@@ -522,13 +538,15 @@ export function applyTurn(
   let phase: GameState['phase'] = isAI ? GamePhase.SELECT : canCall ? GamePhase.GOSTOP : GamePhase.SELECT
   let winner: GameState['winner'] = null
   // Apply GO + shake multipliers to player score at natural game end
-  const rawPlayerPts = isAI ? state.playerScore : newPts
-  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
+  // The opponent may have lost a stolen junk card: re-score their pile too
+  const opp = calcScore(oppCaptured)
+  const rawPlayerPts = isAI ? opp.points : newPts
+  const rawPlayerBD = isAI ? opp.breakdown : breakdown
   const { finalScore: baseFinalPlayerPts, breakdown: baseFinalPlayerBD } = gameOver
     ? finaliseScore(rawPlayerPts, state.goCount, state.shakeCount, rawPlayerBD)
     : { finalScore: rawPlayerPts, breakdown: rawPlayerBD }
-  const baseAiPts = isAI ? newPts : state.aiScore
-  const baseAiBD = isAI ? breakdown : state.aiBreakdown
+  const baseAiPts = isAI ? newPts : opp.points
+  const baseAiBD = isAI ? breakdown : opp.breakdown
   let finalPlayerPts = baseFinalPlayerPts
   let finalPlayerBD = baseFinalPlayerBD
   let finalAiPts = baseAiPts
@@ -554,7 +572,7 @@ export function applyTurn(
   const nextHand = isAI ? newPH : newAH
   const pendingPoktan = !gameOver ? detectPoktan(nextHand, newField) : null
   // Only offer shake when it is the player's turn next (AI ignores shake)
-  const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField) : []
+  const pendingShake = !gameOver && isAI ? detectShake(nextHand, newField, state.shakenMonths) : []
 
   // Skips are only consumed by applySkipTurn — playing a real card keeps them banked
   const poktanSkipsRemaining = state.poktanSkipsRemaining
@@ -619,7 +637,7 @@ export function applySkipTurn(
       ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
       ...breakdown
         .filter(b => !prevBD.some(p => p.key === b.key))
-        .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
+        .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', breakdownLabel(b, t)).replace('{{pts}}', String(b.pts))),
     ],
     quality: 'neutral',
     delta,
@@ -631,10 +649,12 @@ export function applySkipTurn(
   const aiSkips = isAI ? Math.max(0, state.aiPoktanSkipsRemaining - 1) : state.aiPoktanSkipsRemaining
   const gameOver = isRoundOver(state.playerHand, state.aiHand, draw.drawPile, !isAI, playerSkips, aiSkips)
 
-  const rawPlayerPts = isAI ? state.playerScore : newPts
-  const rawPlayerBD = isAI ? state.playerBreakdown : breakdown
-  const rawAiPts = isAI ? newPts : state.aiScore
-  const rawAiBD = isAI ? breakdown : state.aiBreakdown
+  // The opponent may have lost a stolen junk card: re-score their pile too
+  const opp = calcScore(oppCaptured)
+  const rawPlayerPts = isAI ? opp.points : newPts
+  const rawPlayerBD = isAI ? opp.breakdown : breakdown
+  const rawAiPts = isAI ? newPts : opp.points
+  const rawAiBD = isAI ? breakdown : opp.breakdown
 
   let isNagariGame = false
   let phase: GameState['phase'] = GamePhase.SELECT
@@ -669,7 +689,7 @@ export function applySkipTurn(
 
   const nextHand = isAI ? state.playerHand : state.aiHand
   const pendingPoktan = !gameOver ? detectPoktan(nextHand, draw.field) : null
-  const pendingShake = !gameOver && isAI ? detectShake(nextHand, draw.field) : []
+  const pendingShake = !gameOver && isAI ? detectShake(nextHand, draw.field, state.shakenMonths) : []
 
   return {
     ...state,

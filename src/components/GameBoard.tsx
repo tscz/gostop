@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
 import { GamePhase } from '../core/gameState'
 import { selectAiCard, suggestPlayerCard } from '../core/ai'
 import { cardValue } from '../core/scoring'
-import { MONTHS } from '../core/cards'
+import { breakdownLabel } from '../core/labels'
+import { DECK, MONTHS } from '../core/cards'
 import type { Card } from '../core/cards'
 import type { ScoreBreakdown } from '../core/gameState'
-import { blip, buzz } from '../lib/feedback'
+import { blip, buzz, cardSound } from '../lib/feedback'
+import { planThrow } from '../lib/throwPlan'
+import type { Staged } from '../lib/throwPlan'
 import CardSVG from './CardSVG'
 import Timeline from './Timeline'
 import CapturedArea from './CapturedArea'
@@ -20,6 +24,25 @@ const HINTS_PER_ROUND = 3
 // Breakdown entries that are multipliers/penalties, not combos worth celebrating
 const NON_COMBO_KEYS = new Set(['go_bonus', 'shake_bonus', 'gobak', 'gwangbak', 'pibak', 'nagari_bonus', 'bomb'])
 
+// Move pacing (ms). One table so the feel can be tuned in one place.
+const T = {
+  aiStart: 650,    // pause after the player's move before the AI acts
+  aiReveal: 950,   // AI card shown face-up in its row before it is thrown
+  land: 430,       // flight time until a thrown card smacks down
+  throwRest: 800,  // after the hand card lands, before the pile flips
+  flip: 700,       // pile card flip
+  drawRest: 950,   // after the pile card lands, before captures are taken
+}
+// Flight of a thrown card (shared-layout animation from hand/pile to the table)
+const FLIGHT = { type: 'spring' as const, stiffness: 190, damping: 24 }
+// Captured cards slide toward whoever took them (down for the player, up for the AI).
+// They are animated as short-lived copies and removed by a timer instead of
+// AnimatePresence exits, which left captured cards stuck invisibly in the DOM.
+const LEAVE_MS = 600
+interface Leaving { card: Card; x: number; y: number; rot: number; dir: number }
+// Small, stable tilt per card so stacked cards look tossed, not placed
+const tilt = (id: number) => ((id * 37) % 9) - 4
+
 const TYPE_KEY: Record<string, string> = {
   bright: 'typeBright', animal: 'typeAnimal', ribbon: 'typeRibbon', junk: 'typeJunk', double_junk: 'typeDoubleJunk',
 }
@@ -27,12 +50,27 @@ const TYPE_KEY: Record<string, string> = {
 export default function GameBoard() {
   const { t } = useTranslation()
   const { state: g, session, playCard, chooseMatch, declarePoktan, declareShake, callGo, callStop, skipHandCard, newGame, playAiTurn } = useGameStore()
-  const aiTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const aiRevealTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const aiClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const drawnCardTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const drawnCardClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // Every step of a move animation is a timer here, so it can be cancelled as one
+  const moveTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const later = (ms: number, fn: () => void) => { moveTimers.current.push(setTimeout(fn, ms)) }
+  const clearMove = () => { moveTimers.current.forEach(clearTimeout); moveTimers.current = [] }
+  // Cards thrown onto the table but not yet resolved by the rules engine
+  const [staged, setStaged] = useState<Staged[]>([])
+  const [busy, setBusy] = useState(false)
+  const lastMover = useRef<'player' | 'ai'>('player')
+  const [leaving, setLeaving] = useState<Leaving[]>([])
+  const leavingTimer = useRef<ReturnType<typeof setTimeout>>()
+  const fieldRef = useRef<HTMLDivElement>(null)
+  useEffect(() => () => clearTimeout(leavingTimer.current), [])
+
+  // Where every card on the table is right now (field cards and thrown cards on top)
+  const snapshotTable = () =>
+    [...(fieldRef.current?.querySelectorAll<HTMLElement>('[data-card-id]') ?? [])].map(el => {
+      const r = el.getBoundingClientRect()
+      return { id: Number(el.dataset.cardId), x: r.left, y: r.top, rot: Number(el.dataset.tilt ?? 0) }
+    })
   const [helpOpen, setHelpOpen] = useState(false)
+  const [shakeWhy, setShakeWhy] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
   const [drawnCard, setDrawnCard] = useState<Card | null>(null)
   // match-highlighting state
@@ -49,18 +87,78 @@ export default function GameBoard() {
   const [celebration, setCelebration] = useState<ScoreBreakdown | null>(null)
   const prevPlayerKeys = useRef<Set<string>>(new Set())
 
-  // Intercept player card play: flip the pile card first, then execute
-  const handlePlayCard = (c: Card) => {
+  // Play one move as a sequence: throw hand card(s) onto the table → slap →
+  // flip the pile card → throw it onto its match → slap → commit to the store.
+  const runThrow = (opts: {
+    who: 'player' | 'ai'
+    thrown: Card[]
+    target: Card | null
+    startAt?: number
+    commit: () => void
+  }) => {
+    const { who, thrown, target, commit } = opts
+    const top = g.drawPile[0] ?? null
+    const plan = planThrow(g.field, thrown, target, top, who)
+    const takes = target !== null || (plan.draw?.onto ?? null) !== null
+    lastMover.current = who
+    setBusy(true)
+    let at = opts.startAt ?? 0
+    if (plan.hand.length) {
+      later(at, () => { setAiRevealCard(null); setStaged(plan.hand) })
+      later(at + T.land, () => slap(who, target !== null))
+      at += T.throwRest
+    }
+    if (plan.draw) {
+      const d = plan.draw
+      later(at, () => setDrawnCard(d.card))
+      at += T.flip
+      later(at, () => { setDrawnCard(null); setStaged(prev => [...prev, d]) })
+      later(at + T.land, () => slap(who, d.onto !== null))
+      at += T.drawRest
+    }
+    later(at, () => {
+      const before = snapshotTable()
+      commit()
+      // The store updates synchronously: whatever left the table was captured
+      const onField = new Set(useGameStore.getState().state.field.map(c => c.id))
+      const gone = before.filter(b => !onField.has(b.id))
+      if (gone.length) {
+        const dir = who === 'player' ? 1 : -1
+        // flushSync: render the leaving copies in the same pass as the store update,
+        // otherwise a frame can paint where the captured cards have just vanished
+        flushSync(() => setLeaving(gone.map(b => ({ card: DECK.find(c => c.id === b.id)!, x: b.x, y: b.y, rot: b.rot, dir }))))
+        clearTimeout(leavingTimer.current)
+        leavingTimer.current = setTimeout(() => setLeaving([]), LEAVE_MS + 100)
+      }
+      setStaged([])
+      setBusy(false)
+      if (takes) cardSound('swish')
+    })
+  }
+
+  const slap = (who: 'player' | 'ai', onMatch: boolean) => {
+    cardSound('slap', onMatch)
+    if (who === 'player') buzz(onMatch ? 28 : 12)
+  }
+
+  const resetSelection = () => {
     setSelectedHandCard(null)
     setHoverMonth(null)
     setHint(null)
-    const top = g.drawPile[0] ?? null
-    setDrawnCard(top)
-    buzz(8)
-    drawnCardTimerRef.current = setTimeout(() => {
-      playCard(c)
-      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
-    }, 650)
+  }
+
+  const handlePlayCard = (c: Card) => {
+    resetSelection()
+    const matches = g.field.filter(f => f.month === c.month)
+    // Two possible captures: ask first, the throw happens after the choice
+    if (matches.length === 2) { playCard(c); return }
+    runThrow({ who: 'player', thrown: [c], target: matches[0] ?? null, commit: () => playCard(c) })
+  }
+
+  const handleChoose = (m: Card) => {
+    const played = g.pendingChoose?.played
+    if (!played || busy) return
+    runThrow({ who: 'player', thrown: [played], target: m, commit: () => chooseMatch(m) })
   }
 
   // F4: tap-to-select, second-tap-to-play
@@ -73,18 +171,13 @@ export default function GameBoard() {
     }
   }
 
-  // Show move toast after each turn, auto-dismiss after 3.5 s (unless expanded)
+  // Show move toast after each turn, auto-dismiss after 5 s (unless expanded)
   useEffect(() => {
     if (!g.lastExp) return
     setToastVisible(true)
     setToastExpanded(false)
     clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 3500)
-    // Feedback for the move that just happened
-    if (g.lastExp.who === 'player' && g.lastExp.quality !== 'poor' && g.lastExp.quality !== 'neutral') {
-      buzz(g.lastExp.lines[0]?.startsWith('💣') ? [40, 40, 60] : 15)
-      blip('snap')
-    }
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 5000)
     return () => clearTimeout(toastTimerRef.current)
   }, [g.history.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -109,38 +202,38 @@ export default function GameBoard() {
     return () => clearTimeout(id)
   }, [g.playerBreakdown]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // AI turn effect — sequential: wait for player animation → flip hand card → flip pile card → move
+  // AI turn: pause → reveal its card in the AI row → throw it onto the table →
+  // flip + throw the pile card → commit. Same sequence as the player's move.
   useEffect(() => {
     if (g.turn === 'ai' && g.phase === GamePhase.SELECT) {
+      const poktan = g.pendingPoktan
       // Empty hand → the AI is taking a post-poktan bonus draw: only the pile flips
-      const card = g.pendingPoktan ? g.pendingPoktan.handCards[0] : g.aiHand.length ? selectAiCard(g) : null
-      const top = g.drawPile[0] ?? null
-
-      // Step 1: wait for player animation, then flip AI hand card
-      aiRevealTimerRef.current = setTimeout(() => setAiRevealCard(card), 700)
-
-      // Step 2: after AI card flip, flip the pile card
-      aiTimerRef.current = setTimeout(() => setDrawnCard(top), 700 + 550 + 400)
-
-      // Step 3: after pile flip, fire the turn
-      aiClearTimerRef.current = setTimeout(() => {
-        playAiTurn()
-        setTimeout(() => {
-          setAiRevealCard(null)
-          setDrawnCard(null)
-        }, 500)
-      }, 700 + 550 + 400 + 600)
+      const card = poktan ? poktan.handCards[0] : g.aiHand.length ? selectAiCard(g) : null
+      const thrown = poktan ? poktan.handCards : card ? [card] : []
+      // Same capture the rules engine will make (highest-value match)
+      const matches = card ? g.field.filter(f => f.month === card.month) : []
+      const target = poktan
+        ? poktan.fieldCard
+        : matches.length ? matches.reduce((a, b) => (cardValue(b) >= cardValue(a) ? b : a)) : null
+      if (card) later(T.aiStart, () => { setToastVisible(false); setAiRevealCard(card) })
+      runThrow({
+        who: 'ai',
+        thrown,
+        target,
+        startAt: card ? T.aiStart + T.aiReveal : T.aiStart,
+        commit: playAiTurn,
+      })
     }
     return () => {
-      clearTimeout(aiRevealTimerRef.current)
-      clearTimeout(aiTimerRef.current)
-      clearTimeout(aiClearTimerRef.current)
-      clearTimeout(drawnCardTimerRef.current)
-      clearTimeout(drawnCardClearTimerRef.current)
+      clearMove()
+      setStaged([])
+      setBusy(false)
       setAiRevealCard(null)
       setDrawnCard(null)
     }
-  }, [g.turn, g.phase, g.aiHand.length, playAiTurn])
+  }, [g.turn, g.phase, g.aiHand.length, playAiTurn]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => clearMove, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selection when it's no longer the player's turn
   useEffect(() => {
@@ -156,8 +249,8 @@ export default function GameBoard() {
     pile: is2xl ? 54 : 44,
   }), [is2xl])
 
-  // Block player interaction while pile flip is in progress
-  const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT && !drawnCard
+  // Block player interaction while a move is animating
+  const isPlayer = g.turn === 'player' && g.phase === GamePhase.SELECT && !drawnCard && !busy
   const isGoStop = g.phase === GamePhase.GOSTOP
   const isChoose = g.phase === GamePhase.CHOOSE_MATCH
   const isAI = g.turn === 'ai' && g.phase === GamePhase.SELECT
@@ -167,7 +260,7 @@ export default function GameBoard() {
   const canSkip = isPlayer && g.poktanSkipsRemaining > 0
   // Covers SELECT, GOSTOP, CHOOSE_MATCH — any phase where player must act
   const isPlayerTurn = g.turn === 'player' && !isOver
-  const sheetOpen = isChoose || canPoktan || canShake || canSkip
+  const sheetOpen = (isChoose || canPoktan || canShake || canSkip) && !busy
 
   const aiGlow = '0 0 0 2px rgba(248,113,113,0.7), 0 0 20px rgba(248,113,113,0.25)'
   const playerGlow = '0 0 0 2px rgba(147,197,253,0.7), 0 0 20px rgba(147,197,253,0.25)'
@@ -201,25 +294,18 @@ export default function GameBoard() {
 
   const handleGo = () => { buzz(30); blip('go'); callGo() }
 
-  // Poktan also flips the pile — show it before resolving, like a normal play
+  // Poktan: all three hand cards are slapped onto the field card, then the pile flips
   const handlePoktan = () => {
-    setSelectedHandCard(null)
-    setHint(null)
-    setDrawnCard(g.drawPile[0] ?? null)
-    drawnCardTimerRef.current = setTimeout(() => {
-      declarePoktan()
-      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
-    }, 650)
+    const pk = g.pendingPoktan
+    if (!pk) return
+    resetSelection()
+    runThrow({ who: 'player', thrown: pk.handCards, target: pk.fieldCard, commit: declarePoktan })
   }
 
+  // Skip (post-poktan bonus draw): only the pile card is thrown
   const handleSkip = () => {
-    setSelectedHandCard(null)
-    setHint(null)
-    setDrawnCard(g.drawPile[0] ?? null)
-    drawnCardTimerRef.current = setTimeout(() => {
-      skipHandCard()
-      drawnCardClearTimerRef.current = setTimeout(() => setDrawnCard(null), 500)
-    }, 650)
+    resetSelection()
+    runThrow({ who: 'player', thrown: [], target: null, commit: skipHandCard })
   }
 
   // Choose-match advice: recommend the more valuable card
@@ -238,8 +324,45 @@ export default function GameBoard() {
     : g.endReason === 'instant' ? t('endInstant')
     : t('endNatural')
 
+  // Cards on the table but not yet in state leave the hand/AI row/pile right away
+  const stagedIds = new Set(staged.map(s => s.card.id))
+  const handShown = g.playerHand.filter(c => !stagedIds.has(c.id))
+  const aiStaged = g.aiHand.filter(c => stagedIds.has(c.id)).length
   // AI face-down cards fan out with overlap so 10 cards always fit (no clipped sliver)
-  const aiBacks = aiRevealCard ? g.aiHand.slice(0, -1) : g.aiHand
+  const aiBacks = Array.from({ length: Math.max(0, g.aiHand.length - aiStaged - (aiRevealCard ? 1 : 0)) })
+  const pileTopStaged = g.drawPile[0] !== undefined && stagedIds.has(g.drawPile[0].id)
+  const pileCount = g.drawPile.length - (pileTopStaged ? 1 : 0)
+  // The store updates synchronously on commit, so for one render a card can be both
+  // staged and already on the field — the field copy wins.
+  const fieldIds = new Set(g.field.map(c => c.id))
+  const onTable = staged.filter(s => !fieldIds.has(s.card.id))
+  // Table = field cards + thrown cards that landed on an empty spot
+  const tableCards: Card[] = [...g.field, ...onTable.filter(s => s.onto === null).map(s => s.card)]
+
+  // Thrown cards resting on top of `id` (recursively: a pile card can land on a thrown card)
+  const renderStack = (id: number, depth = 0): React.ReactNode =>
+    onTable.filter(s => s.onto === id).map((s, i) => (
+      <motion.div
+        key={s.card.id}
+        layoutId={`card-${s.card.id}`}
+        data-card-id={s.card.id}
+        data-tilt={tilt(s.card.id)}
+        className="absolute"
+        style={{ left: 9 + 3 * i, top: 11 + 3 * i, zIndex: 10 + depth * 5 + i }}
+        initial={{ opacity: 0, y: s.who === 'ai' ? -70 : 70, scale: 1.18 }}
+        animate={{ opacity: 1, y: 0, rotate: tilt(s.card.id), scale: [1.18, 1.18, 0.93, 1] }}
+        transition={{
+          layout: FLIGHT,
+          default: FLIGHT,
+          scale: { duration: (T.land + 180) / 1000, times: [0, 0.7, 0.85, 1] },
+        }}
+      >
+        <div style={{ filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.6))' }}>
+          <CardSVG card={s.card} size={sz.field} />
+        </div>
+        {renderStack(s.card.id, depth + 1)}
+      </motion.div>
+    ))
 
   return (
     <div
@@ -289,26 +412,28 @@ export default function GameBoard() {
                 </AnimatePresence>
                 {!g.aiHand.length && !aiRevealCard && <span className="text-slate-700 text-xs">–</span>}
                 {aiRevealCard && (
+                  // Zero-height anchor: the revealed card floats over the row instead of growing it
+                  <div className="ml-2 relative flex-shrink-0" style={{ width: sz.ai, height: 30 }}>
                   <motion.div
                     layoutId={`card-${aiRevealCard.id}`}
-                    className="ml-2"
-                    style={{ position: 'relative', width: sz.ai, height: Math.round(sz.ai * 1.52), flexShrink: 0 }}
+                    style={{ position: 'absolute', left: 0, top: -4, width: sz.ai, height: Math.round(sz.ai * 1.52), zIndex: 20 }}
                   >
                     <motion.div
                       style={{ position: 'absolute', transformOrigin: 'center' }}
                       animate={{ scaleX: [1, 0, 0] }}
-                      transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                      transition={{ duration: 0.7, times: [0, 0.45, 1], ease: 'easeInOut' }}
                     >
                       <CardSVG card={{ id: 'back_reveal', month: 0 }} faceDown size={sz.ai} />
                     </motion.div>
                     <motion.div
                       style={{ position: 'absolute', transformOrigin: 'center' }}
                       animate={{ scaleX: [0, 0, 1] }}
-                      transition={{ duration: 0.55, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                      transition={{ duration: 0.7, times: [0, 0.45, 1], ease: 'easeInOut' }}
                     >
                       <CardSVG card={aiRevealCard} size={sz.ai} />
                     </motion.div>
                   </motion.div>
+                  </div>
                 )}
               </div>
               <ScoreButton
@@ -346,35 +471,48 @@ export default function GameBoard() {
               <span className="text-emerald-500/80 text-sm font-semibold">🍀 {t('field')}</span>
             </div>
             <div className="flex gap-2 min-h-[5rem] items-center">
-              <div className="flex gap-2 flex-wrap flex-1 items-center">
-                <AnimatePresence mode="popLayout">
-                  {g.field.length === 0 ? (
+              <div ref={fieldRef} className="flex gap-2 flex-wrap flex-1 items-center">
+                  {tableCards.length === 0 ? (
                     <span className="text-slate-700 text-sm italic">–</span>
                   ) : (
-                    g.field.map(c => {
+                    tableCards.map(c => {
                       const isMatch = highlightMonth !== null && c.month === highlightMonth
                       const isDimmed = highlightMonth !== null && c.month !== highlightMonth
+                      const thrownHere = onTable.find(s => s.card.id === c.id)
+                      const hit = onTable.some(s => s.onto === c.id)
                       return (
                         <motion.div
                           key={c.id}
                           layoutId={`card-${c.id}`}
                           layout
-                          initial={{ scale: 0.6, opacity: 0, y: -20 }}
-                          animate={{ scale: isMatch ? 1.08 : 1, opacity: isDimmed ? 0.35 : 1, y: isMatch ? -4 : 0 }}
-                          exit={{ scale: 1.2, opacity: 0 }}
-                          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                          data-card-id={c.id}
+                          initial={thrownHere ? { scale: 1.18 } : { scale: 0.6, opacity: 0, y: -20 }}
+                          animate={{
+                            scale: thrownHere ? [1.18, 1.18, 0.93, 1] : isMatch ? 1.08 : 1,
+                            opacity: isDimmed ? 0.35 : 1,
+                            y: isMatch ? -4 : 0,
+                            // the card underneath jolts when something is slapped onto it
+                            x: hit ? [0, 0, -3, 3, -1, 0] : 0,
+                          }}
+                          transition={{
+                            layout: FLIGHT,
+                            default: { type: 'spring', stiffness: 260, damping: 24 },
+                            scale: thrownHere ? { duration: (T.land + 180) / 1000, times: [0, 0.7, 0.85, 1] } : { type: 'spring', stiffness: 260, damping: 24 },
+                            x: { duration: (T.land + 250) / 1000, times: [0, 0.62, 0.72, 0.82, 0.92, 1] },
+                          }}
+                          style={{ position: 'relative' }}
                         >
                           <CardSVG card={c} size={sz.field} highlighted={isMatch} />
+                          {renderStack(c.id)}
                         </motion.div>
                       )
                     })
                   )}
-                </AnimatePresence>
               </div>
 
               {/* Draw pile */}
               <AnimatePresence>
-                {g.drawPile.length > 0 && (
+                {(pileCount > 0 || drawnCard) && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -382,12 +520,12 @@ export default function GameBoard() {
                     className="flex-shrink-0 ml-1"
                     style={{ position: 'relative', width: sz.pile + 8, height: Math.round(sz.pile * 1.52) + 8 }}
                   >
-                    {g.drawPile.length > 2 && (
+                    {pileCount > 2 && (
                       <div style={{ position: 'absolute', top: -4, left: -4, opacity: 0.35 }}>
                         <CardSVG card={{ id: 'pile_2', month: 0 }} faceDown size={sz.pile} />
                       </div>
                     )}
-                    {g.drawPile.length > 1 && (
+                    {pileCount > 1 && (
                       <div style={{ position: 'absolute', top: -2, left: -2, opacity: 0.65 }}>
                         <CardSVG card={{ id: 'pile_1', month: 0 }} faceDown size={sz.pile} />
                       </div>
@@ -400,14 +538,14 @@ export default function GameBoard() {
                         <motion.div
                           style={{ position: 'absolute', top: 0, left: 0, transformOrigin: 'center' }}
                           animate={{ scaleX: [1, 0, 0] }}
-                          transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                          transition={{ duration: T.flip / 1000 * 0.85, times: [0, 0.45, 1], ease: 'easeInOut' }}
                         >
                           <CardSVG card={{ id: 'pile_top', month: 0 }} faceDown size={sz.pile} />
                         </motion.div>
                         <motion.div
                           style={{ position: 'absolute', top: 0, left: 0, transformOrigin: 'center' }}
                           animate={{ scaleX: [0, 0, 1] }}
-                          transition={{ duration: 0.5, times: [0, 0.45, 1], ease: 'easeInOut' }}
+                          transition={{ duration: T.flip / 1000 * 0.85, times: [0, 0.45, 1], ease: 'easeInOut' }}
                         >
                           <CardSVG card={drawnCard} size={sz.pile} />
                         </motion.div>
@@ -415,7 +553,7 @@ export default function GameBoard() {
                     ) : (
                       <AnimatePresence>
                         <motion.div
-                          key={g.drawPile.length}
+                          key={pileCount}
                           style={{ position: 'absolute', top: 0, left: 0 }}
                           initial={{ y: -18, opacity: 0, scale: 0.85 }}
                           animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -427,7 +565,7 @@ export default function GameBoard() {
                       </AnimatePresence>
                     )}
                     <motion.div
-                      key={`count-${g.drawPile.length}`}
+                      key={`count-${pileCount}`}
                       initial={{ scale: 1.4, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 25 }}
@@ -438,7 +576,7 @@ export default function GameBoard() {
                         fontFamily: 'monospace', lineHeight: '16px',
                       }}
                     >
-                      {g.drawPile.length}
+                      {pileCount}
                     </motion.div>
                   </motion.div>
                 )}
@@ -495,7 +633,7 @@ export default function GameBoard() {
             </div>
             <div className="flex gap-2 flex-wrap min-h-[4rem] items-end">
               <AnimatePresence mode="popLayout">
-                {g.playerHand.map(c => {
+                {handShown.map(c => {
                   const isSelected = selectedHandCard?.id === c.id
                   const isHinted = hint?.cardId === c.id
                   const isHandDimmed = (!isPlayer && !isChoose) || (highlightMonth !== null && !isSelected && c.month !== highlightMonth)
@@ -511,7 +649,7 @@ export default function GameBoard() {
                       whileTap={isPlayer ? { scale: 0.95 } : undefined}
                       onHoverStart={() => { if (isPlayer) setHoverMonth(c.month) }}
                       onHoverEnd={() => setHoverMonth(null)}
-                      transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+                      transition={{ type: 'spring', stiffness: 280, damping: 24, layout: FLIGHT }}
                       style={{ cursor: isPlayer ? 'pointer' : 'default', position: 'relative' }}
                     >
                       <CardSVG
@@ -678,7 +816,7 @@ export default function GameBoard() {
                     </div>
                     <span className="text-white/40 text-xl pb-6">→</span>
                     {g.pendingChoose.matches.map(c => (
-                      <button key={c.id} onClick={() => chooseMatch(c)} className="relative transition-transform active:scale-95 hover:scale-105">
+                      <button key={c.id} onClick={() => handleChoose(c)} className="relative transition-transform active:scale-95 hover:scale-105">
                         <CardSVG card={c} size={sz.hand} highlighted />
                         {chooseAdvice?.best?.id === c.id && (
                           <span className="absolute -top-2 -right-2 text-[10px] font-black bg-emerald-500 text-black rounded-full px-1.5 py-0.5 shadow">★</span>
@@ -716,7 +854,18 @@ export default function GameBoard() {
                 <div key={shake.handCards[0].month} className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-purple-300 font-black text-sm">👋 {t('shakeTitle')}</p>
-                    <p className="text-purple-200/70 text-xs leading-snug">{t('shakeDesc')}</p>
+                    <p className="text-purple-200/70 text-xs leading-snug">
+                      {t('shakeDesc')}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShakeWhy(w => !w)}
+                        aria-expanded={shakeWhy}
+                        className="underline decoration-dotted text-purple-200/90"
+                      >
+                        {t('why')}
+                      </button>
+                    </p>
+                    {shakeWhy && <p className="text-purple-100/85 text-xs leading-snug mt-1">{t('shakeWhy')}</p>}
                   </div>
                   <div className="flex gap-1 items-center flex-shrink-0">
                     {shake.handCards.map(c => <CardSVG key={c.id} card={c} size={28} />)}
@@ -742,6 +891,23 @@ export default function GameBoard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── CAPTURED CARDS LEAVING THE TABLE (timer-removed copies) ─────────── */}
+      {leaving.length > 0 && (
+        <div className="fixed inset-0 z-30 pointer-events-none" aria-hidden="true">
+          {leaving.map(l => (
+            <motion.div
+              key={l.card.id}
+              style={{ position: 'fixed', left: l.x, top: l.y, rotate: l.rot }}
+              initial={{ opacity: 1, y: 0, scale: 1 }}
+              animate={{ opacity: 0, y: l.dir * 90, scale: 0.55 }}
+              transition={{ duration: LEAVE_MS / 1000, ease: 'easeIn' }}
+            >
+              <CardSVG card={l.card} size={sz.field} />
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       {/* ── MOVE TOAST — top of screen, compact, tap to expand ──────────────── */}
       <AnimatePresence>
@@ -794,7 +960,7 @@ export default function GameBoard() {
           >
             <div className="mx-4 rounded-2xl border-2 border-yellow-400/70 bg-gradient-to-b from-yellow-500/30 to-amber-900/80 backdrop-blur-md px-6 py-4 text-center shadow-2xl shadow-yellow-900/50">
               <p className="text-4xl leading-none mb-1">{celebration.emoji}</p>
-              <p className="text-yellow-200 text-xl font-black">{celebration.label}</p>
+              <p className="text-yellow-200 text-xl font-black">{breakdownLabel(celebration, t)}</p>
               <p className="text-yellow-300 font-black text-lg">+{celebration.pts} {t('pts')}</p>
             </div>
           </motion.div>
@@ -807,6 +973,7 @@ export default function GameBoard() {
 function ResultColumn({ title, score, breakdown, empty, accent }: {
   title: string; score: number; breakdown: ScoreBreakdown[]; empty: string; accent: string
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-xl bg-black/30 border border-white/8 p-2.5 min-w-0">
       <div className="flex justify-between items-baseline mb-1">
@@ -818,7 +985,7 @@ function ResultColumn({ title, score, breakdown, empty, accent }: {
       ) : (
         breakdown.map((b, i) => (
           <div key={i} className="flex justify-between gap-1 text-[11px] leading-snug py-0.5">
-            <span className="text-white/75 min-w-0">{b.emoji} {b.label}</span>
+            <span className="text-white/75 min-w-0">{b.emoji} {breakdownLabel(b, t)}</span>
             <span className="text-yellow-300/90 font-bold flex-shrink-0">+{b.pts}</span>
           </div>
         ))

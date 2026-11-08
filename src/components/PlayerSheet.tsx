@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { CardType } from '../core/cards'
 import { comboProgress } from '../core/scoring'
+import { breakdownLabel } from '../core/labels'
 import type { Card } from '../core/cards'
 import type { ScoreBreakdown } from '../core/gameState'
 import CardSVG from './CardSVG'
@@ -78,7 +79,7 @@ export default function PlayerSheet({ label, score, breakdown, captured, onClose
               <div className="flex flex-col">
                 {breakdown.map((b, i) => (
                   <div key={i} className="flex justify-between items-center py-1.5 border-b border-slate-800/60 last:border-0">
-                    <span className="text-slate-200 text-sm">{b.emoji} {b.label}</span>
+                    <span className="text-slate-200 text-sm">{b.emoji} {breakdownLabel(b, t)}</span>
                     <span className="text-yellow-400 font-black text-sm">+{b.pts}</span>
                   </div>
                 ))}
