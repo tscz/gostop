@@ -107,5 +107,7 @@
   "noCaptures": "No cards captured yet",
   "tapForDetails": "Tap for details",
   "close": "Close",
-  "skipDoneAi": "The AI used a bonus draw (after its Poktan)."
+  "skipDoneAi": "The AI used a bonus draw (after its Poktan).",
+  "why": "Why?",
+  "shakeWhy": "It's free: no card is played and you keep your turn. If you win this round your score doubles; if you lose, nothing happens. The only cost is that the opponent sees these 3 cards, and this AI ignores that. If this month lands on the field later, the same 3 cards become a Poktan."
 }

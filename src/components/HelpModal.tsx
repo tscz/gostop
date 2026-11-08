@@ -88,7 +88,12 @@ const SPECIAL_RULES = {
     {
       name: '폭탄 Poktan', color: 'text-red-400',
       trigger: 'You hold 3 hand cards of the same month and 1 is on the field — declare at the start of your turn',
-      effect: 'Capture all 4 cards + steal 1 junk (no draw step)',
+      effect: 'Play all 3 at once: capture all 4 cards + steal 1 junk, then flip the pile as usual. You get 2 bonus draws (Skip) later for the extra cards you played',
+    },
+    {
+      name: '흔들기 Shake', color: 'text-fuchsia-400',
+      trigger: 'You hold 3 hand cards of the same month and none of that month is on the field',
+      effect: 'Show the 3 cards to your opponent. No card is played and you keep your turn. If you win the round your score is doubled (×2, shaking twice ×4); if you lose, nothing happens. The only cost is that your opponent knows your cards, which this AI ignores, so here it is always worth it. If that month later lands on the field, the same 3 cards become a Poktan',
     },
   ],
   de: [
@@ -115,7 +120,12 @@ const SPECIAL_RULES = {
     {
       name: '폭탄 Poktan', color: 'text-red-400',
       trigger: '3 Handkarten gleichen Monats + 1 Tischkarte — am Zuganfang deklarieren',
-      effect: 'Alle 4 Karten nehmen + 1 Junk stehlen (kein Ziehen)',
+      effect: 'Alle 3 auf einmal spielen: alle 4 Karten nehmen + 1 Pi stehlen, danach wie üblich vom Stapel ziehen. Für die extra gespielten Karten bekommst du später 2 Gratis-Züge (Überspringen)',
+    },
+    {
+      name: '흔들기 Schütteln', color: 'text-fuchsia-400',
+      trigger: '3 Handkarten gleichen Monats, keine Karte dieses Monats auf dem Tisch',
+      effect: 'Zeige dem Gegner die 3 Karten. Es wird keine Karte gespielt und du bleibst am Zug. Gewinnst du die Runde, verdoppeln sich deine Punkte (×2, zweimal geschüttelt ×4); verlierst du, passiert nichts. Einziger Nachteil: der Gegner kennt deine Karten – diese KI nutzt das nicht, hier lohnt es sich also immer. Landet später eine Karte dieses Monats auf dem Tisch, werden dieselben 3 Karten zum Poktan',
     },
   ],
   ko: [
@@ -142,7 +152,12 @@ const SPECIAL_RULES = {
     {
       name: '폭탄', color: 'text-red-400',
       trigger: '손패 3장이 바닥 카드 1장과 같은 달 — 턴 시작 시 선언',
-      effect: '4장 모두 획득 + 피 1장 빼앗기 (뽑기 없음)',
+      effect: '3장을 한 번에 내서 4장 모두 획득 + 피 1장 빼앗기, 이후 평소처럼 더미에서 뒤집기. 추가로 낸 패 대신 나중에 2번 무료로 뒤집기(건너뛰기)',
+    },
+    {
+      name: '흔들기', color: 'text-fuchsia-400',
+      trigger: '같은 달 손패 3장, 바닥에는 그 달 패가 없음',
+      effect: '상대에게 3장을 보여줍니다. 패를 내지 않고 계속 내 차례입니다. 이번 판을 이기면 점수 2배 (두 번 흔들면 4배), 지면 아무 일도 없습니다. 상대가 내 패를 안다는 것이 유일한 단점인데 이 AI는 이를 이용하지 않으므로 항상 이득입니다. 나중에 그 달 패가 바닥에 깔리면 같은 3장으로 폭탄을 할 수 있습니다',
     },
   ],
 }
