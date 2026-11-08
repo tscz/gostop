@@ -127,5 +127,8 @@
   "bd_gwangbak": "광박 Verlierer ohne Lichter ×2",
   "bd_pibak": "피박 Verlierer mit weniger als 6 Pi ×2",
   "bd_nagari_bonus": "나가리 Nagari ×{{n}}",
-  "bd_bomb": "네 장 폭탄 Vier eines Monats: Sofortsieg"
+  "bd_bomb": "네 장 폭탄 Vier eines Monats: Sofortsieg",
+  "play": "Spielen",
+  "howToPlay": "Spielanleitung",
+  "titleTagline": "Koreanische Blumenkarten gegen die KI lernen"
 }
