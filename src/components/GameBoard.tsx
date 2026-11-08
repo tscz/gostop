@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../store/gameStore'
@@ -123,7 +124,9 @@ export default function GameBoard() {
       const gone = before.filter(b => !onField.has(b.id))
       if (gone.length) {
         const dir = who === 'player' ? 1 : -1
-        setLeaving(gone.map(b => ({ card: DECK.find(c => c.id === b.id)!, x: b.x, y: b.y, rot: b.rot, dir })))
+        // flushSync: render the leaving copies in the same pass as the store update,
+        // otherwise a frame can paint where the captured cards have just vanished
+        flushSync(() => setLeaving(gone.map(b => ({ card: DECK.find(c => c.id === b.id)!, x: b.x, y: b.y, rot: b.rot, dir }))))
         clearTimeout(leavingTimer.current)
         leavingTimer.current = setTimeout(() => setLeaving([]), LEAVE_MS + 100)
       }
