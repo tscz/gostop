@@ -63,14 +63,14 @@ export function calcScore(captured: Card[]): ScoreResult {
   if (ribbons.length >= 5) {
     const b = ribbons.length - 4
     points += b
-    breakdown.push({ key: 'tti', emoji: '🎀', label: `띠 ${ribbons.length} Ribbons`, pts: b, cards: ribbons })
+    breakdown.push({ key: 'tti', emoji: '🎀', label: `띠 ${ribbons.length} Ribbons`, n: ribbons.length, pts: b, cards: ribbons })
   }
 
   // Animals
   if (animals.length >= 5) {
     const b = animals.length - 4
     points += b
-    breakdown.push({ key: 'kkeus', emoji: '🦋', label: `끗 ${animals.length} Animals`, pts: b, cards: animals })
+    breakdown.push({ key: 'kkeus', emoji: '🦋', label: `끗 ${animals.length} Animals`, n: animals.length, pts: b, cards: animals })
   }
 
   // Pi
@@ -80,7 +80,7 @@ export function calcScore(captured: Card[]): ScoreResult {
   if (pi >= 10) {
     const b = pi - 9
     points += b
-    breakdown.push({ key: 'pi', emoji: '🃏', label: `피 ${pi} Junk`, pts: b, cards: piCards })
+    breakdown.push({ key: 'pi', emoji: '🃏', label: `피 ${pi} Junk`, n: pi, pts: b, cards: piCards })
   }
 
   return { points, breakdown }
@@ -110,10 +110,10 @@ export function finaliseScore(
   const finalScore = applyShakeMultiplier(goScore, shakeCount)
   let bd = breakdown
   if (goCount > 0) {
-    bd = [...bd, { key: 'go_bonus', emoji: '🔥', label: `GO ×${goCount} 보너스`, pts: goScore - rawScore }]
+    bd = [...bd, { key: 'go_bonus', emoji: '🔥', label: `GO ×${goCount} bonus`, n: goCount, pts: goScore - rawScore }]
   }
   if (shakeCount > 0) {
-    bd = [...bd, { key: 'shake_bonus', emoji: '👋', label: `흔들기 ×${Math.pow(2, shakeCount)} 보너스`, pts: finalScore - goScore }]
+    bd = [...bd, { key: 'shake_bonus', emoji: '👋', label: `흔들기 ×${Math.pow(2, shakeCount)} bonus`, n: Math.pow(2, shakeCount), pts: finalScore - goScore }]
   }
   return { finalScore, breakdown: bd }
 }
@@ -180,7 +180,7 @@ export function applyNagariMultiplier(
     finalScore,
     breakdown: [
       ...breakdown,
-      { key: 'nagari_bonus', emoji: '🔄', label: `나가리 ×${multiplier}`, pts: finalScore - score },
+      { key: 'nagari_bonus', emoji: '🔄', label: `나가리 ×${multiplier}`, n: multiplier, pts: finalScore - score },
     ],
   }
 }

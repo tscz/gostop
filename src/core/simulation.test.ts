@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest'
 import { useGameStore } from '../store/gameStore'
 import { setRandom, seededRandom } from './deck'
 import { dealSeeded, playToEnd, strategies } from '../test/simulate'
+import i18n from '../i18n'
 
 // Full rounds through the real store, seeded so any failure replays exactly.
 // After EVERY action the rule invariants in src/test/simulate.ts are checked:
@@ -10,15 +11,17 @@ import { dealSeeded, playToEnd, strategies } from '../test/simulate'
 // live score = captured value, GO/STOP offered exactly when due, final score =
 // breakdown, natural endings use every card, Nagari exactly when nobody hit 7.
 
-const ROUNDS_PER_STRATEGY = 300
+// SIM_ROUNDS=20000 npx vitest run src/core/simulation.test.ts — for a long soak
+const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {}
+const ROUNDS_PER_STRATEGY = Number(env.SIM_ROUNDS ?? 300)
 
-afterAll(() => setRandom(null))
+afterAll(() => { setRandom(null); void i18n.changeLanguage('en') })
 
 describe('seeded full-round simulation', () => {
   const names = Object.keys(strategies(Math.random))
 
   it.each(names)('strategy "%s": %i rounds follow the rules', name => {
-    const stats = { natural: 0, stop: 0, aiStop: 0, instant: 0, nagari: 0, poktan: 0, shake: 0, skip: 0, go: 0 }
+    const stats = { natural: 0, stop: 0, aiStop: 0, instant: 0, nagari: 0, poktan: 0, shake: 0, skip: 0, go: 0, aiPoktan: 0 }
     for (let seed = 1; seed <= ROUNDS_PER_STRATEGY; seed++) {
       dealSeeded(seed)
       const d = strategies(seededRandom(seed * 7919))[name]
@@ -26,6 +29,7 @@ describe('seeded full-round simulation', () => {
       stats[final.endReason ?? 'natural']++
       if (final.isNagari) stats.nagari++
       for (const a of ['poktan', 'shake', 'skip', 'go'] as const) if (actions.includes(a)) stats[a]++
+      if (final.history.some(h => h.who === 'ai' && h.lines[0]?.startsWith('💣'))) stats.aiPoktan++
     }
     // Every way a round can end actually occurred across the seeds
     expect(stats.natural + stats.stop + stats.aiStop + stats.instant).toBe(ROUNDS_PER_STRATEGY)
@@ -54,6 +58,22 @@ describe('seeded full-round simulation', () => {
       expect(s.playerTotal).toBe(playerTotal)
       expect(s.aiTotal).toBe(aiTotal)
       expect(s.rounds).toHaveLength(round)
+    }
+  })
+
+  it.each(['de', 'ko'])('move messages and score lines are fully translated in %s (100 rounds)', async lang => {
+    await i18n.changeLanguage(lang)
+    try {
+      for (let seed = 1; seed <= 100; seed++) {
+        dealSeeded(seed)
+        const { final } = playToEnd(strategies(seededRandom(seed)).random, `lang=${lang} seed=${seed}`)
+        // every score line has its own translation (no English fallback label)
+        for (const b of [...final.playerBreakdown, ...final.aiBreakdown]) {
+          expect(i18n.getResource(lang, 'translation', `bd_${b.key}`), `bd_${b.key} in ${lang}`).toBeTypeOf('string')
+        }
+      }
+    } finally {
+      await i18n.changeLanguage('en')
     }
   })
 

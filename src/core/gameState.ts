@@ -21,6 +21,7 @@ export interface ScoreBreakdown {
   label: string
   pts: number
   cards?: Card[]
+  n?: number  // count or multiplier shown in the label (띠 6, GO ×2, …)
 }
 
 // ═══════════════════════════════════════════════════════════════

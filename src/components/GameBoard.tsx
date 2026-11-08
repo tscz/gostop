@@ -5,6 +5,7 @@ import { useGameStore } from '../store/gameStore'
 import { GamePhase } from '../core/gameState'
 import { selectAiCard, suggestPlayerCard } from '../core/ai'
 import { cardValue } from '../core/scoring'
+import { breakdownLabel } from '../core/labels'
 import { MONTHS } from '../core/cards'
 import type { Card } from '../core/cards'
 import type { ScoreBreakdown } from '../core/gameState'
@@ -920,7 +921,7 @@ export default function GameBoard() {
           >
             <div className="mx-4 rounded-2xl border-2 border-yellow-400/70 bg-gradient-to-b from-yellow-500/30 to-amber-900/80 backdrop-blur-md px-6 py-4 text-center shadow-2xl shadow-yellow-900/50">
               <p className="text-4xl leading-none mb-1">{celebration.emoji}</p>
-              <p className="text-yellow-200 text-xl font-black">{celebration.label}</p>
+              <p className="text-yellow-200 text-xl font-black">{breakdownLabel(celebration, t)}</p>
               <p className="text-yellow-300 font-black text-lg">+{celebration.pts} {t('pts')}</p>
             </div>
           </motion.div>
@@ -933,6 +934,7 @@ export default function GameBoard() {
 function ResultColumn({ title, score, breakdown, empty, accent }: {
   title: string; score: number; breakdown: ScoreBreakdown[]; empty: string; accent: string
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-xl bg-black/30 border border-white/8 p-2.5 min-w-0">
       <div className="flex justify-between items-baseline mb-1">
@@ -944,7 +946,7 @@ function ResultColumn({ title, score, breakdown, empty, accent }: {
       ) : (
         breakdown.map((b, i) => (
           <div key={i} className="flex justify-between gap-1 text-[11px] leading-snug py-0.5">
-            <span className="text-white/75 min-w-0">{b.emoji} {b.label}</span>
+            <span className="text-white/75 min-w-0">{b.emoji} {breakdownLabel(b, t)}</span>
             <span className="text-yellow-300/90 font-bold flex-shrink-0">+{b.pts}</span>
           </div>
         ))

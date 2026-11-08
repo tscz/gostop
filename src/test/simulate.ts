@@ -5,7 +5,8 @@ import { GamePhase } from '../core/gameState'
 import { DECK, MONTHS } from '../core/cards'
 import { calcScore, cardValue } from '../core/scoring'
 import { suggestPlayerCard } from '../core/ai'
-import { initState } from '../core/rules'
+import { initState, detectShake, detectPoktan } from '../core/rules'
+import en from '../i18n/en.json'
 import { seededRandom, setRandom, countByMonth } from '../core/deck'
 import type { GameState } from '../core/gameState'
 import type { Card } from '../core/cards'
@@ -87,7 +88,24 @@ function allCards(s: GameState): Card[] {
   ]
 }
 
+// Text of every i18n key — a move message containing one means a missing translation
+const I18N_KEYS = Object.keys(en).filter(k => /[A-Z]/.test(k))
+
+function checkText(lines: string[], ctx: string): void {
+  for (const l of lines) {
+    if (!l.trim()) fail('empty message line', ctx)
+    if (/\{\{|undefined|NaN|\bnull\b|\[object/.test(l)) fail(`unfilled message: "${l}"`, ctx)
+    const key = I18N_KEYS.find(k => new RegExp(`\\b${k}\\b`).test(l))
+    if (key) fail(`untranslated key "${key}" in message: "${l}"`, ctx)
+  }
+}
+
 export function checkState(s: GameState, ctx: string): void {
+  if (s.playerScore < 0 || s.aiScore < 0) fail('negative score', ctx)
+  if (s.lastExp) checkText(s.lastExp.lines, ctx)
+  for (const b of [...s.playerBreakdown, ...s.aiBreakdown]) {
+    if (!b.label || !Number.isFinite(b.pts)) fail(`bad breakdown entry ${JSON.stringify(b)}`, ctx)
+  }
   // 48 cards, each exactly once
   const all = ids(allCards(s))
   if (all.length !== 48 || new Set(all).size !== 48) {
@@ -109,7 +127,10 @@ export function checkState(s: GameState, ctx: string): void {
     // Offered specials must be real
     if (s.pendingPoktan) {
       const pk = s.pendingPoktan
-      const hand = s.turn === 'player' ? s.playerHand : s.aiHand
+      // During the GO/STOP decision the turn is still the player's, but the
+      // pending Poktan belongs to the AI, which moves next after a GO
+      const aiNext = s.turn === 'ai' || s.phase === GamePhase.GOSTOP
+      const hand = aiNext ? s.aiHand : s.playerHand
       const m = pk.handCards[0].month
       if (pk.handCards.length !== 3 || pk.handCards.some(c => c.month !== m || !hand.some(h => h.id === c.id))) {
         fail('pendingPoktan does not match 3 hand cards of one month', ctx)
@@ -195,6 +216,23 @@ export function checkTransition(prev: GameState, next: GameState, action: Action
       if (due !== (next.phase === GamePhase.GOSTOP)) fail(`GO/STOP offered=${next.phase === GamePhase.GOSTOP}, due=${due} at ${next.playerScore} pts`, ctx)
     }
   }
+  // Completeness: when it's the player's move, every legal special is offered
+  if (next.phase === GamePhase.SELECT && next.turn === 'player' && moved) {
+    const shakes = detectShake(next.playerHand, next.field, next.shakenMonths).map(x => x.handCards[0].month).sort()
+    const offered = next.pendingShake.map(x => x.handCards[0].month).sort()
+    if (shakes.join() !== offered.join()) fail(`Shake offered for [${offered}] but eligible [${shakes}]`, ctx)
+    const pk = detectPoktan(next.playerHand, next.field)
+    if (!!pk !== !!next.pendingPoktan) fail(`Poktan offered=${!!next.pendingPoktan}, eligible=${!!pk}`, ctx)
+  }
+  if (next.goCount < prev.goCount) fail('GO count went down', ctx)
+  if (action === 'ai' && prev.aiHand.length === 0 && prev.aiPoktanSkipsRemaining > 0) {
+    if (next.aiPoktanSkipsRemaining !== prev.aiPoktanSkipsRemaining - 1) fail('AI bonus draw did not use a skip', ctx)
+  }
+  if (next.endReason === 'aiStop') {
+    const raw = calcScore(next.aiCaptured).points
+    if (raw < 7) fail(`AI stopped with only ${raw} points`, ctx)
+  }
+
   if (action === 'shake') {
     if (next.shakeCount !== prev.shakeCount + 1) fail('shake did not count', ctx)
     if (ids(next.playerHand).join() !== ids(prev.playerHand).join() || next.turn !== 'player') fail('shake changed hand or turn', ctx)

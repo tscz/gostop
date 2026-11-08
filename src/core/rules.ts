@@ -2,6 +2,7 @@ import { CardType, MONTHS } from './cards'
 import { GamePhase } from './gameState'
 import { calcScore, finaliseScore, applyLoserPenalties, applyNagariMultiplier, cardValue } from './scoring'
 import { buildExplanation } from './moveExplainer'
+import { breakdownLabel } from './labels'
 import { deal } from './deck'
 import type { Card } from './cards'
 import type { GameState, MoveExplanation, PendingPoktan, PendingShake, ScoreBreakdown } from './gameState'
@@ -320,7 +321,7 @@ export function applyPoktan(
     ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
     ...breakdown
       .filter(b => !prevBD.some(p => p.key === b.key))
-      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
+      .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', breakdownLabel(b, t)).replace('{{pts}}', String(b.pts))),
   ]
 
   const exp: MoveExplanation = {
@@ -636,7 +637,7 @@ export function applySkipTurn(
       ...(delta > 0 ? [`+${delta} ${t('pts')} (${t('total')}: ${newPts})`] : []),
       ...breakdown
         .filter(b => !prevBD.some(p => p.key === b.key))
-        .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', b.label).replace('{{pts}}', String(b.pts))),
+        .map(b => t('coachNewCategory').replace('{{emoji}}', b.emoji).replace('{{label}}', breakdownLabel(b, t)).replace('{{pts}}', String(b.pts))),
     ],
     quality: 'neutral',
     delta,

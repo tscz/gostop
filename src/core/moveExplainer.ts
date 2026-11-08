@@ -1,5 +1,6 @@
 import { cardValue } from './scoring'
 import { MONTHS } from './cards'
+import { breakdownLabel } from './labels'
 import type { Card, CardType } from './cards'
 import type { ScoreBreakdown, MoveExplanation } from './gameState'
 
@@ -140,7 +141,7 @@ export function buildExplanation({
       lines.push(
         t('coachNewCategory')
           .replace('{{emoji}}', b.emoji)
-          .replace('{{label}}', b.label)
+          .replace('{{label}}', breakdownLabel(b, t))
           .replace('{{pts}}', String(b.pts)),
       )
       quality = 'excellent'
