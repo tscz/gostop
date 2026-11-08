@@ -6,7 +6,7 @@ import { GamePhase } from '../core/gameState'
 import { selectAiCard, suggestPlayerCard } from '../core/ai'
 import { cardValue } from '../core/scoring'
 import { breakdownLabel } from '../core/labels'
-import { MONTHS } from '../core/cards'
+import { DECK, MONTHS } from '../core/cards'
 import type { Card } from '../core/cards'
 import type { ScoreBreakdown } from '../core/gameState'
 import { blip, buzz, cardSound } from '../lib/feedback'
@@ -34,10 +34,11 @@ const T = {
 }
 // Flight of a thrown card (shared-layout animation from hand/pile to the table)
 const FLIGHT = { type: 'spring' as const, stiffness: 190, damping: 24 }
-// Captured cards slide toward whoever took them: down for the player, up for the AI
-const fieldVariants = {
-  exit: (dir: number) => ({ opacity: 0, y: dir * 90, scale: 0.55, transition: { duration: 0.55, ease: 'easeIn' } }),
-}
+// Captured cards slide toward whoever took them (down for the player, up for the AI).
+// They are animated as short-lived copies and removed by a timer instead of
+// AnimatePresence exits, which left captured cards stuck invisibly in the DOM.
+const LEAVE_MS = 600
+interface Leaving { card: Card; x: number; y: number; rot: number; dir: number }
 // Small, stable tilt per card so stacked cards look tossed, not placed
 const tilt = (id: number) => ((id * 37) % 9) - 4
 
@@ -56,6 +57,17 @@ export default function GameBoard() {
   const [staged, setStaged] = useState<Staged[]>([])
   const [busy, setBusy] = useState(false)
   const lastMover = useRef<'player' | 'ai'>('player')
+  const [leaving, setLeaving] = useState<Leaving[]>([])
+  const leavingTimer = useRef<ReturnType<typeof setTimeout>>()
+  const fieldRef = useRef<HTMLDivElement>(null)
+  useEffect(() => () => clearTimeout(leavingTimer.current), [])
+
+  // Where every card on the table is right now (field cards and thrown cards on top)
+  const snapshotTable = () =>
+    [...(fieldRef.current?.querySelectorAll<HTMLElement>('[data-card-id]') ?? [])].map(el => {
+      const r = el.getBoundingClientRect()
+      return { id: Number(el.dataset.cardId), x: r.left, y: r.top, rot: Number(el.dataset.tilt ?? 0) }
+    })
   const [helpOpen, setHelpOpen] = useState(false)
   const [shakeWhy, setShakeWhy] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
@@ -104,7 +116,17 @@ export default function GameBoard() {
       at += T.drawRest
     }
     later(at, () => {
+      const before = snapshotTable()
       commit()
+      // The store updates synchronously: whatever left the table was captured
+      const onField = new Set(useGameStore.getState().state.field.map(c => c.id))
+      const gone = before.filter(b => !onField.has(b.id))
+      if (gone.length) {
+        const dir = who === 'player' ? 1 : -1
+        setLeaving(gone.map(b => ({ card: DECK.find(c => c.id === b.id)!, x: b.x, y: b.y, rot: b.rot, dir })))
+        clearTimeout(leavingTimer.current)
+        leavingTimer.current = setTimeout(() => setLeaving([]), LEAVE_MS + 100)
+      }
       setStaged([])
       setBusy(false)
       if (takes) cardSound('swish')
@@ -313,7 +335,6 @@ export default function GameBoard() {
   const onTable = staged.filter(s => !fieldIds.has(s.card.id))
   // Table = field cards + thrown cards that landed on an empty spot
   const tableCards: Card[] = [...g.field, ...onTable.filter(s => s.onto === null).map(s => s.card)]
-  const captureDir = lastMover.current === 'player' ? 1 : -1
 
   // Thrown cards resting on top of `id` (recursively: a pile card can land on a thrown card)
   const renderStack = (id: number, depth = 0): React.ReactNode =>
@@ -321,6 +342,8 @@ export default function GameBoard() {
       <motion.div
         key={s.card.id}
         layoutId={`card-${s.card.id}`}
+        data-card-id={s.card.id}
+        data-tilt={tilt(s.card.id)}
         className="absolute"
         style={{ left: 9 + 3 * i, top: 11 + 3 * i, zIndex: 10 + depth * 5 + i }}
         initial={{ opacity: 0, y: s.who === 'ai' ? -70 : 70, scale: 1.18 }}
@@ -445,8 +468,7 @@ export default function GameBoard() {
               <span className="text-emerald-500/80 text-sm font-semibold">🍀 {t('field')}</span>
             </div>
             <div className="flex gap-2 min-h-[5rem] items-center">
-              <div className="flex gap-2 flex-wrap flex-1 items-center">
-                <AnimatePresence mode="popLayout" custom={captureDir}>
+              <div ref={fieldRef} className="flex gap-2 flex-wrap flex-1 items-center">
                   {tableCards.length === 0 ? (
                     <span className="text-slate-700 text-sm italic">–</span>
                   ) : (
@@ -460,8 +482,7 @@ export default function GameBoard() {
                           key={c.id}
                           layoutId={`card-${c.id}`}
                           layout
-                          custom={captureDir}
-                          variants={fieldVariants}
+                          data-card-id={c.id}
                           initial={thrownHere ? { scale: 1.18 } : { scale: 0.6, opacity: 0, y: -20 }}
                           animate={{
                             scale: thrownHere ? [1.18, 1.18, 0.93, 1] : isMatch ? 1.08 : 1,
@@ -470,7 +491,6 @@ export default function GameBoard() {
                             // the card underneath jolts when something is slapped onto it
                             x: hit ? [0, 0, -3, 3, -1, 0] : 0,
                           }}
-                          exit="exit"
                           transition={{
                             layout: FLIGHT,
                             default: { type: 'spring', stiffness: 260, damping: 24 },
@@ -485,7 +505,6 @@ export default function GameBoard() {
                       )
                     })
                   )}
-                </AnimatePresence>
               </div>
 
               {/* Draw pile */}
@@ -869,6 +888,23 @@ export default function GameBoard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── CAPTURED CARDS LEAVING THE TABLE (timer-removed copies) ─────────── */}
+      {leaving.length > 0 && (
+        <div className="fixed inset-0 z-30 pointer-events-none" aria-hidden="true">
+          {leaving.map(l => (
+            <motion.div
+              key={l.card.id}
+              style={{ position: 'fixed', left: l.x, top: l.y, rotate: l.rot }}
+              initial={{ opacity: 1, y: 0, scale: 1 }}
+              animate={{ opacity: 0, y: l.dir * 90, scale: 0.55 }}
+              transition={{ duration: LEAVE_MS / 1000, ease: 'easeIn' }}
+            >
+              <CardSVG card={l.card} size={sz.field} />
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       {/* ── MOVE TOAST — top of screen, compact, tap to expand ──────────────── */}
       <AnimatePresence>
