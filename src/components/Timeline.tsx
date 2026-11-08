@@ -37,12 +37,15 @@ function Dot({ h, color, index, total }: { h: MoveExplanation; color: string; in
       onMouseEnter={() => setVisible(true)}
       onMouseLeave={() => setVisible(false)}
     >
-      <div
+      <button
+        type="button"
+        aria-label={h.lines?.[0] ?? ''}
+        onClick={() => setVisible(v => !v)}
         style={{ background: color }}
         className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-black cursor-pointer shadow-sm select-none"
       >
         {h.who === 'player' ? 'P' : 'A'}
-      </div>
+      </button>
 
       {visible && h.lines?.length > 0 && (
         <div
