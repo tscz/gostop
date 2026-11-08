@@ -33,6 +33,7 @@ export default function GameBoard() {
   const drawnCardTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const drawnCardClearTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [shakeWhy, setShakeWhy] = useState(false)
   const [aiRevealCard, setAiRevealCard] = useState<Card | null>(null)
   const [drawnCard, setDrawnCard] = useState<Card | null>(null)
   // match-highlighting state
@@ -716,7 +717,18 @@ export default function GameBoard() {
                 <div key={shake.handCards[0].month} className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-purple-300 font-black text-sm">👋 {t('shakeTitle')}</p>
-                    <p className="text-purple-200/70 text-xs leading-snug">{t('shakeDesc')}</p>
+                    <p className="text-purple-200/70 text-xs leading-snug">
+                      {t('shakeDesc')}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShakeWhy(w => !w)}
+                        aria-expanded={shakeWhy}
+                        className="underline decoration-dotted text-purple-200/90"
+                      >
+                        {t('why')}
+                      </button>
+                    </p>
+                    {shakeWhy && <p className="text-purple-100/85 text-xs leading-snug mt-1">{t('shakeWhy')}</p>}
                   </div>
                   <div className="flex gap-1 items-center flex-shrink-0">
                     {shake.handCards.map(c => <CardSVG key={c.id} card={c} size={28} />)}
