@@ -77,7 +77,7 @@ export default function Header({ onHelpOpen }: HeaderProps) {
           ☰
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl bg-slate-950/98 border border-slate-700/60 p-2 shadow-2xl">
+          <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl bg-slate-950 border border-slate-700 p-2 shadow-2xl shadow-black/60">
             {confirmNew ? (
               <div className="p-2 flex flex-col gap-2">
                 <p className="text-sm text-white/85">{t('confirmNewGame')}</p>
@@ -121,7 +121,7 @@ export default function Header({ onHelpOpen }: HeaderProps) {
                   <span>🔊 {t('soundHaptics')}</span>
                   <span className={fx ? 'text-emerald-400' : 'text-white/40'}>{fx ? t('on') : t('off')}</span>
                 </button>
-                <div className="my-1 border-t border-white/8" />
+                <div className="my-1 border-t border-white/10" />
                 <button onClick={requestNew} className="w-full text-left px-2 py-2 rounded-lg hover:bg-white/8 text-sm text-white/85">
                   {t('newGame')}
                 </button>
